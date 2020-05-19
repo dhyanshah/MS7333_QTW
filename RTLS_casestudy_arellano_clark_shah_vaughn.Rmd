@@ -479,6 +479,8 @@ ErrorMap = function(estXY, actualXY, trainData = NULL, AP = NULL){
 }
 actualXY = onlineSummary[ , c("posX", "posY")]
 ```
+With Running our K-NN with Access Point A, we are yielding an optimal number of neighbors at 8 which generates us just over 1,400 in our Sum of Square Errors. We will use this as a baseline for our other evaluations. 
+
 ```{r errormap_a}
 ErrorMap(estXY  = estXYkmin1 , actualXY = actualXY, trainData = trainData)
 ```
@@ -704,6 +706,8 @@ ErrorMap = function(estXY, actualXY, trainData = NULL, AP = NULL){
 actualXY = onlineSummary[ , c("posX", "posY")]
 ```
 
+Running our KNN model on access point b, we find that the optimal number of neighbors garners 5 as the optimal number of neighbors. This yields us a sum of square error of just over 1,000, which is better than our KNN model on access point A. 
+
 ```{r errormap_b}
 ErrorMap(estXY  = estXYkmin2 , actualXY = actualXY, trainData = trainData)
 ```
@@ -722,7 +726,7 @@ The model that includes AP B has a significantly lower RMSE than the model with 
 
 ## Modeling: K Nearest Neighbors (all Macs)
 
-We will now perform a final model with all the data, and compare results. 
+We will now perform a model with all the data, and compare results. 
 
 ```{r all_macs}
 offline <- readData("offline.final.trace.txt")
@@ -913,9 +917,13 @@ ErrorMap = function(estXY, actualXY, trainData = NULL, AP = NULL){
 actualXY = onlineSummary[ , c("posX", "posY")]
 ```
 
+Running our model using both Access Points A and B gives us an optimal number of neighbors at 8. Which generates us a sum of square errors at just over 1,200. This is a bit lower than our strongest performing unweighted model which was including only access pont B. 
+
 ```{r errormap_all}
 ErrorMap(estXY  = estXYkmin3 , actualXY = actualXY, trainData = trainData)
 ```
+
+Above is a visualization of our error of our predicted access points with red lines showing the difference of their locations with their respective actual points. 
 
 ```{r}
 datatable(data.frame(router = c("With Access Point A","With Access Point B", "All Access Points"), 
@@ -1121,11 +1129,13 @@ ErrorMap = function(estXY, actualXY, trainData = NULL, AP = NULL){
 actualXY = onlineSummary[ , c("posX", "posY")]
 ```
 
+The result of running our Access point A of our weighted model generates an optimal model of 20 neighbors. This gives us a very inefficient Sum of Square errors of just below 6,000. 
+
 ```{r errormap_weighted}
 ErrorMap(estXY  = estXYkmin4 , actualXY = actualXY, trainData = trainData)
 ```
 
-Next, we will try the weighed Knn with the access points B removed and replaced with that of Access points A
+Above, we show a visual demonstrating the error of each actual vs predicted observation. Next, we will try the weighed Knn with the access points B removed and replaced with that of Access points A
 
 ```{r weighted_knn2}
 offline <- readData("offline.final.trace.txt")
@@ -1320,10 +1330,14 @@ ErrorMap = function(estXY, actualXY, trainData = NULL, AP = NULL){
 }
 actualXY = onlineSummary[ , c("posX", "posY")]
 ```
+Running a weighted model with access point B, we recieved an optimal sum of square errors at 8 neighbors and a Sum of Square Errors of just below 2,000.
+
 
 ```{r errormap_weighted 2}
 ErrorMap(estXY  = estXYkmin5 , actualXY = actualXY, trainData = trainData)
 ```
+
+The visual shows the error of actuals and their respective predicted locations using our Access Point B mac address and not the A.
 
 ```{r both_weighted_knn}
 offline <- readData("offline.final.trace.txt")
@@ -1518,6 +1532,8 @@ ErrorMap = function(estXY, actualXY, trainData = NULL, AP = NULL){
 actualXY = onlineSummary[ , c("posX", "posY")]
 ```
 
+Running our weighted neighbor model with both access point A and B, we found the optimal number of neighbors was 5 which gave us a Sum of Squared Errors of just above 1,000.
+
 ```{r errormap_weighted 2.5}
 ErrorMap(estXY  = estXYkmin6 , actualXY = actualXY, trainData = trainData)
 ```
@@ -1550,7 +1566,7 @@ Overall, we were tasked with evaluating which combination of Mac Addresses helpe
 
 # Deployment
 
-With being able to predict the location of users in a building using a wifi connection and access points, we are now able to better understand the usage of our cellular and wifi resources within a building space. For example, if we were to find similar results in a library, we will then know that most of the students are on the west side of the library so that we can boost the wifi capabilities on that side using the unused resources on the east side of the building. From a bigger scale, on Football Game Days, a campus can transmit most of the wifi resources towards the stadium side of the campus using the (likely) unused wifi resources on the library side of the campus. This will help ensure a campus can meet the connectivity needs of its student population without spending Unnecessary amounts of money to manage traffic spikes. 
+With being able to predict the location of users in a building using a wifi connection and access points, we are now able to better understand the usage of our cellular and wifi resources within a building space. For example, if we were to find similar results in a library, we will then know that most of the students are on the west side of the library so that we can boost the wifi capabilities on that side using the unused resources on the east side of the building. From a bigger scale, on Football Game Days, a campus can transmit most of the wifi resources towards the stadium side of the campus using the (likely) unused wifi resources on the library side of the campus. This will help ensure a campus can meet the connectivity needs of its student population without spending unnecessary amounts of money to manage traffic spikes. 
 
 The drawback to this method of using real-time to locate an object is accounting for the fact that objects are typically in people's pockets or backpacks as they move around the room, so we may lose track of the handheld devices in the room if our data is providing snapshots of x's around the room rather than labeled users. This could limit our insight capability of being able to see into how specific users interact and move around a building for further analysis. We could correct this by potentially pairing an IP address with the device receiving the signal and including that ip address as a separate column in our dataframe. 
 
