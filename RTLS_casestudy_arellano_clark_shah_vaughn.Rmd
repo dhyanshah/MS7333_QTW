@@ -72,7 +72,7 @@ To complete this analysis, We employed the following steps.
 
 # Data
 
-For this project, we will be leveraging two separate datasets for our analysis. One of which is a reference set named offline which contains signal strength measurements from a hand-held device on a gridwork of 166 different points, all of which were spaced 1 meter apart. This gridwork is located in the hallways of a one floor building at the University of Mannheim. The other dataset is titled online which we will be using for testing our k-NN model to predict the location of an unknown device. The online dataset includes 60 different locations chosen at random with 110 signals measured from each point by six 6 wireless access points. In figure 1.1 below, you can see a map of the online test locations (black dots) overlaid with the offline training locations (grey dots). Both datasets contain the same features and will require the same procedures for cleaning.  
+For this project, we will be leveraging two separate datasets for our analysis. One of which is a reference set named offline which contains signal strength measurements from a hand-held device on a gridwork of 166 different points, all of which were spaced 1 meter apart. This gridwork is located in the hallways of a one floor building at the University of Mannheim. The other dataset is titled online which we will be using for testing our k-NN model to predict the location of an unknown device. The online dataset includes 60 different locations chosen at random with 110 signals measured from each point by six 6 wireless access points. In the below, you can see a map of the online test locations (black dots) overlaid with the offline training locations (grey dots). Both datasets contain the same features and will require the same procedures for cleaning.  
 
 
 ```{r, fig.cap = "**Office layout:** *Floor plan of the first floor of the test building in the University of Mannheim. Depicts the offline points (grey dots) placed about a meter apart from one another and the placement of the online points (black dots) scattered randomly throughout for testing. Wifi access points are denoted by blue squares.*"}
@@ -174,11 +174,13 @@ Reviewing our cleansed data set, we can see the following:
 head(offline)
 ```
 
+Above is a view of our cleaned dataset. We are working with a time stamp value, an X and Y location value of our access point, the Mac address we are working with, a signal strength and the angle in which the signal was recieved. 
+
 It should be noted that the original researchers chose to exclude data from one access point. Of the 7 access points, 2 were Alpha routers. Mac `00:0f:a3:39:e1:c0` was kept for the analysis, and mac `00:0f:a3:39:dd:cd` was removed. In this analysis we will endeavor to determine whether this action was warranted. 
 
 According to our documentation, we should have only 8 values for orientation. We also simplify our measurement of the reader orientation and round these measurements to the nearest 45 degree angle. The resolution of the existing data is less important, thus we can safely assume that 45 degree increments is sufficient, and this will provide some relief in terms of computational effort. 
 
-We will look at the orientation column of our dataset, we can see that we have a wide variety of angles available in clusters around the expected angles (such as 179 or 181) as shown in figure 2.1. Since we are going to focus on measure signal strength at 8 orientations in 45-degree increments, we will round each of our orientations to the nearest 45 degree increment. Additionally, we will try to map values close to 360 so that they line up back to zero. 
+We will look at the orientation column of our dataset, we can see that we have a wide variety of angles available in clusters around the expected angles (such as 179 or 181) as shown below. Since we are going to focus on measure signal strength at 8 orientations in 45-degree increments, we will round each of our orientations to the nearest 45 degree increment. Additionally, we will try to map values close to 360 so that they line up back to zero. 
 ```{r 45_angles, fig.cap = "**Orientation for the Hand-Held Device:** *The location of the orientation values as it relates to the empirical cdf. We can see that at each major orientation (45, 90, 135, 180, ect) are scattered around these values. So our cleaning procedure is going to round these to the nearest 45 degree angle. After making the adjustment, we can see that the new values look like they are more exact to the 8 angles we are using. *"}
 length(unique(offline$orientation))
 
@@ -231,7 +233,7 @@ offline %>% mutate(angle = factor(angle)) %>%
   labs(x="Angles", y="RSSI")
 ```
 
-This is further confirmed when reviewing a comparison of mean and standard deviation between the routers. This confirms our suspicion  for low signal strength values for `00:0f:a3:39:dd:cd`. In fact, access point `00:0f:a3:39:e1:c0` is the strongest signal compared to all access points.
+This is further confirmed when reviewing a comparison of mean and standard deviation between the routers. This confirms our suspicion  for low signal strength values for `00:0f:a3:39:dd:cd`. In fact, access point `00:0f:a3:39:e1:c0` is the strongest signal compared to all access points, which we can see in the charts above and below. 
 
 ```{r mean_stddev}
 
@@ -485,7 +487,7 @@ With Running our K-NN with Access Point A, we are yielding an optimal number of 
 ErrorMap(estXY  = estXYkmin1 , actualXY = actualXY, trainData = trainData)
 ```
 
-Through the grid search we can see that the best value for K is `r kMin`, with an error of `r rmseMin`. Prediction for the online data has an RMSE of  `r err_cv1 `. 
+Through the grid search we can see that the best value for K is `8`, with an error of 1,400.  
 
 ## Modeling: K Nearest Neighbors (excluding `00:0f:a3:39:e1:c0`)
 Now we will conduct the same exercise excluding the other access point. 
@@ -712,7 +714,7 @@ Running our KNN model on access point b, we find that the optimal number of neig
 ErrorMap(estXY  = estXYkmin2 , actualXY = actualXY, trainData = trainData)
 ```
 
-Here, the optimal value for K is  `r kMin`, with an error of  `r rmseMin`. Prediction for the online data has an RMSE of  `r err_cv2`. Lets compare the results to those of router B:
+Above is a visual of the actual location of the devices with red lines to the predicted location of the devices. Prediction for the online data has an SSE Lets compare the results to those of router B:
 
 ```{r, fig.cap = "*Model Data with AP B overall performed better than AP A*"}
 error_df$k <- 1:nrow(error_df)
