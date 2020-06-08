@@ -1,0 +1,373 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Load the libraries
+```{r libraries}
+library(magrittr)
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tm)
+library(rpart)
+library(caret)
+library(mlr)
+library(parallelMap)
+library(doParallel)
+library(missForest)
+library(scales)
+library(ggthemes)
+library(GGally)
+library(ltm)
+library(rpart.plot)
+library(knitr)
+```
+
+```{r, load data}
+getwd()
+setwd("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials")
+
+load("data.Rda") 
+```
+
+
+Finding the full path name into the RSpamData directory with RSpamData and then list the files in RSpamData with listfiles and directories. 
+
+We are going to rename and relevel variables for better interpretation. 
+```{r spampat}
+emailDFrp$isSpam <- emailDFrp$isSpam %>% 
+                      revalue(c("T"="Spam", "F"="Valid")) %>% 
+                        relevel("Spam")
+```
+
+
+Next we will impute the missing values based on the random forest classification and regesssion using a parallel method. 
+
+```{r parallel}
+registerDoParallel(cores=4)
+
+df <- missForest(emailDFrp, 
+                 maxiter=5, 
+                 ntree=200, 
+                 parallelize = c('forests'),
+                 variablewise = TRUE)
+
+# establish imputed set
+emailDFrp <- df$ximp
+```
+
+
+#### Exploratory Data Analysis
+
+A preliminary evaluation of the dataset found missing observations in over 300 rows. More specifically, we have missing values for the following predictor variables. 
+
+* subSpamWords
+* subQuesCt
+* subExcCt
+* SubBlanks
+* numRec
+* noHost
+* isYelling
+
+Since this represents a significant portion of our dataset, we will look to impute the missing values using random forest regression and classification for the numeric and categorical predictor variables. 
+
+```{r imputation, include=TRUE, echo=FALSE}
+# get dataset balance, show via barchart
+emailDFrp %>% 
+  group_by(isSpam) %>% 
+    dplyr::summarise(Count=n()) %>% 
+      mutate(Pct = Count/sum(Count)) %>%
+      ggplot(aes(x=isSpam, y=Count, label=comma(Count))) + 
+      geom_bar(stat='identity') +  theme_light() + 
+      ggtitle("Figure 1: Spam vs. Non-Spam Split") + 
+      scale_y_continuous("Count", labels =comma, limits=c(0,7500)) + 
+      scale_x_discrete("Response Variable Category")  + 
+      geom_text(vjust=-0.5)+
+      theme(text=element_text(size=14))
+```
+
+The chart above shows that we have an unbalanced dataset with nearly 2,400 spam emails along with nearly 7,000 nonspam email (valid) emails. This means that 1 out of every 4 emails in our set are considered spam. The reason we show you this is to highlight the fact that we will need to account for this in our future modeling practice, and ensure that we are turning and training our models such that they are not being rewarded for leaning too much on assigning the valid class to new valid. That said, since the unbalance isn't huge, we will not need to apply oversampling mehtods to address this issue. 
+
+##### Explanatory Variable Relationships
+
+With Regards to our imputed dataset, the correlation matrix shows that we have some positive relationships between our numerical predictors, which shows promising when it comes time to build our regression procedure. 
+
+```{r correlation plot, include = TRUE, cache=TRUE, echo=FALSE}
+
+# build correlation matrix
+AsVector <- emailDFrp[, c(2:30)]
+nums <- sapply(AsVector, is.numeric)
+bools <- sapply(AsVector, is.factor)
+# correlation matrix for numerical features
+cormat <- (round(cor(AsVector[, nums]), 2))
+cormat[lower.tri(cormat, diag=TRUE)] <- NA
+cormat <- reshape2::melt(cormat, na.rm = TRUE)
+# plot correlation matrix
+cormat %>% ggplot(aes(x=Var1, y=Var2, fill=value)) + 
+           geom_tile() + 
+           geom_text(aes(Var1, Var2, label = value), color = "white", size = 4)+
+           theme(legend.position = "right", 
+                 axis.text.x = element_text(angle=90, 
+                                            vjust=-.5),
+                 legend.text=element_text(size=10),
+                 text=element_text(size=14)) + 
+           scale_x_discrete("") + 
+           scale_y_discrete("") + 
+           ggtitle("Figure 2: Correlation Between Numeric Predictor Variable Pairs")+
+           guides(fill=guide_legend(title="Correlation"))
+
+```
+
+Looking at the data, we can see three positive relationships can be pointed out.
+
+* bodyCharct and numLines
+* bodyCharct and perHTML
+* numDir and subQuesCt
+
+While not too high, the correlation of these predictors can potentially be overweighed in our modeling procedures, due to the fact that they might not be independent. For example, numLines and bodyCharct are both functions of the length of the email in question, so they are very similar metrics. However, if we use recursive partitioning in our modeling, the collinearity between these three pairs of variables will be accounted for, by selecting the most important variable if similar variables are found. 
+
+Looking at the non-numerical values in our dataset, we can see that we have 16 boolean values that we can factor our model into as well. To do so, we will employ the Fisher's exact p-test to show the resulting p-values for our dichotomous variables, which we will use as a numerical comparison similar to how we used correlation on our numerical variables. 
+
+```{r fisher's test, include=TRUE, cache=TRUE, echo=FALSE}
+
+# fisher exact matrix for categorical features
+# get booleans
+Dat <- AsVector[, bools]
+# source combos of each var
+combos <- combn(ncol(Dat), 2)
+# apply fishers to each combo and capture in df
+fishers <- adply(combos, 2, function(x) {
+  test <- fisher.test(Dat[, x[1]], Dat[, x[2]])
+  out <- data.frame("Row" = colnames(Dat)[x[1]]
+                    , "Column" = colnames(Dat[x[2]])
+                    , "OddsRatio" = test$estimate
+                    ,  "type"= test$alternative
+                    ,  "p.value" = round(test$p.value, 2)
+                    )
+  return(out)
+})  
+# plot fisher matrix
+fishers %>% 
+  ggplot(aes(x=Row, y=Column, fill = p.value)) + 
+  geom_tile() + 
+  geom_text(aes(Row, Column, label = p.value), color = "white", size = 3)+
+  theme(legend.position = "right", 
+        legend.text=element_text(size=10),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14)) +
+        scale_y_discrete("") + 
+        scale_x_discrete("Predictor Variable") + 
+        ggtitle("Figure 3: Fisher's Exact Test for Boolean Predictor Variables")
+```
+
+The lower p values indicate that we reject the null of a randomized assocation between dichotomous variables. Here we can see that there are some large non random dependencies for variables such as isWrote which indicate whether an email is electronically scribed. Since this is apparent in almost all instances, we can likely remove. HOwever, there are some instances for variables such as priority and noHost which may be interesting for classifying spam or not spam. This would make sense as the lack of host name and sender are variables written by the email sender.
+
+We can also visually review the correlation between factors and continuous variables using a biserial correlation (as we have dichotomous factors for all of our non-continuous variables). Upon review, we can see some relationships emerge. 
+
+```{r biser_cor, include=TRUE, echo=FALSE, cache=TRUE, fig.height=7, fig.width=8.5}
+# we use biserial correlation in order to get a more accurate picture of factor v continous relationships
+# get all data except response
+Dat <- AsVector
+# identify factor and numeric vars for biserial correlation
+facs_indx <- which(lapply(AsVector, is.factor) == TRUE)
+facs <- AsVector[,facs_indx]
+nums <- AsVector[,-facs_indx]
+# establish df of correlations
+df <- as.data.frame(lapply(nums, function(x) sapply(facs, function(y) biserial.cor(x, y))))
+# melt it for viz purposes
+df <- reshape::melt(as.matrix(df))
+df$value <- round(df$value, 2)
+# plot the relationships
+df %>% 
+  ggplot(aes(x=X1, y=X2, fill=value)) + 
+  geom_tile() + 
+  geom_text(aes(X1, X2, label = value), color = "white", size = 3)+
+  theme(legend.position = "right", 
+        legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14)) +
+  scale_y_discrete("") + scale_x_discrete("Categorical Predictor Variable") + 
+  ggtitle("Figure 4: Biserial Correlation - Factor and Continuous Predictors")+
+  guides(fill=guide_legend(title="Correlation"))
+```
+
+Reviewing the plot further, we can see that the number of attachments (numAtt) has a negative correlation with the boolean value of multipartText. Multipart text messages typically do not typically have attachments. In addition, we are seeing that the variable for number of forwards has a negative correlation to isInReplyTo, which suggests that the replies do not typically have a ton of forwards. 
+
+Overall, we will look into ways that continuous and factor variables can be used to predict the variable isSpam while also pulling out the variable importances int he rpart package. 
+
+#### Response Variable Relationships
+
+As we mentioned before, the majority of our instances in our dataset are not considered spam. That said, we can visualize the relationships between spam and valid emails for the factor and continuous predictor variables using different plotting techniques. 
+
+First, we will look forther into isRe, numEnd, subSpamWords and isWrote. The variable numEnd indicates whether or not the 'from' email prefix ends with a number, such as 'clark.daniel424@gmail.com.'
+
+```{r bool_impact, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
+# which factor variables are worth splitting?
+# plot counts of each variable based on their boolean status and the counts
+# of spam and valid
+emailDFrp[, c(1,which(bools)+1)] %>% 
+  gather(Predictor, Value, 2:ncol(emailDFrp[,c(1, which(bools)+1)])) %>% 
+    filter(Predictor %in% c("isRe", "numEnd", "subSpamWords", "isWrote")) %>%
+      ggplot(aes(x=isSpam)) + 
+      geom_bar() + 
+      facet_grid(Value~Predictor) + 
+      theme_light() + 
+      theme(legend.position = "bottom", 
+            legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))+
+      ggtitle("Figure 5: Boolean Predictor Variables and Spam Outcomes", 
+               subtitle = "Y Axis Faceting Shows Spam or Valid Email for Each Predictor") +       
+    scale_y_continuous("Count", labels =comma) + 
+    scale_x_discrete("Is Spam - True or False")
+```
+
+In the chart above, subSpamWords is a boolean that indicates when a known "spam word" is indicated in the subject of an email, such as "viagra" which would trigger a value for subSpamwords. The majority of our spam cases happen when our factors are set to false. Additionally, the mostly valid emails are related to instances when isRe and isWrote are set to true. This will prove to be usefil when seeing how a decision tree can be split between our categorical variables in the decision function to detirmine if an email is spam or not spam. 
+
+We will also look into the separation of classes for numeric variables by looking at the log values for our numeric placements in a box plots. We will review some of the interesting numerics in the figure below. 
+
+
+```{r numeric_impact, include = TRUE, echo=FALSE, cache = TRUE, fig.width=8.5, fig.height=3}
+# get boxplots of key numeric predictors, split by outcome status valid or spam
+nums <- which(lapply(emailDFrp, is.numeric) ==TRUE) 
+# aggregate and plot boxes
+emailDFrp[,c(1, nums)] %>% 
+  gather(Predictor, Value, 2:ncol(emailDFrp[,c(1, nums)])) %>% 
+    filter(Predictor %in% c("forwards", "perCaps", "perHTML", "numLines", 'bodyCharCt')) %>%
+      ggplot(aes(x=isSpam, y=log(1+Value))) + 
+      geom_boxplot(outlier.size=0.25, position="dodge") + 
+      facet_wrap(~Predictor, scales = "free_y", ncol=5) + 
+      theme_light() + 
+      theme(legend.position = "bottom", 
+            legend.text=element_text(size=8),
+            legend.title = element_text(size=10),
+            axis.text.x = element_text(angle=90, vjust=0.5),
+            text=element_text(size=14))+
+      ggtitle("Figure 6: Continous Predictor Variables and Spam Outcomes") + 
+      scale_x_discrete("Spam or Valid Email")+
+      ylab("Log Value")
+```
+
+The forwards predictor variable, shows a great concentration of value distribution for the third quartile of messages that are labeled as valid. The perCaps predictor variable shows a larger predictor interval for spam than valid emails. We can also see that the median value for spam is higher than the valid messages. On Per HTML, the mean and median value for valid emails is nearly zero while the range is much greater for the spam messages.
+
+Examination of these predictor variables indicates that we may have some leads to uncovering a predictor and an important features related to detecting spam. 
+
+#### Variable Selection and Model Comparison Setup
+
+In hopes to avoid the complexity of variable selection algorithms to run an algorithm against our email data set, we will set up a fit of an rpart model using the training data an all 29 features and default model parameters. For the default parameters for rpart, we will use a minsplit of 20 along with a complexity parameter of 0.01 with a max depth of 30. The splitting criteria will use the default Gini Index. 
+
+for our setup, we will use an 80/20 split between the training and testing set. Since we have an imbalanced relationship between spam emails and valid emails, we can use a stratified sampling of the observations in our training and testing data sets to ensure we maintain the original balance. We have 9,000 total observations, so this would mean that our testing set will have roughly 1,800 observations. 
+
+As we will run a series of models in our experiment, we will maintain this distribution of training and testing data for each model to ensure that we are running a valid experiment. As our rpart is trained, it will provide a listing of variables that are playing the greatest role in deciding upon valid or spam email. The chart below provides the most important features using the rpart base model. 
+
+```{r fit_dtree_base, echo=FALSE, include=TRUE, fig.height=5, fig.width=8.5}
+# we fit the base rpart model in this block
+set.seed(4)
+# get counts to prep for train/test split
+spam <- emailDFrp$isSpam == "Spam"
+numSpam <- sum(spam)
+numHam <- sum(!spam)
+# 80/20 split, stratified
+testSpamIdx <- sample(numSpam, size = floor(numSpam/5))
+testHamIdx <- sample(numHam, size = floor(numHam/5))
+# pull together stratified train and test sets with training 80 pct
+testDF <- 
+  rbind( emailDFrp[emailDFrp$isSpam == "Spam", ][testSpamIdx, ],
+         emailDFrp[emailDFrp$isSpam == "Valid", ][testHamIdx, ])
+trainDF <-
+  rbind( emailDFrp[emailDFrp$isSpam == "Spam", ][-testSpamIdx, ], 
+         emailDFrp[emailDFrp$isSpam == "Valid", ][-testHamIdx, ])
+# initiate mlr classification task
+# set up a learning task placeholder
+spam.tsk = makeClassifTask(id = "spam", 
+                           data = trainDF, 
+                           target = "isSpam")
+# Create the learner from embedded libraries
+spam.lrn = makeLearner( cl = "classif.rpart",# use rpart algorithm, gini index is default for splitting
+                        id ="spam", # give it an id
+                        fix.factors.prediction = TRUE, # control for missing class if any)
+                        predict.type = 'prob') # to get probabilities
+# focus on maxdepth, cp and minsplit
+# show defaults - cp = 0.01, minsplit=20, maxdepth=30
+#getParamSet(spam.lrn) 
+# fit with defaults, cp = 0.01
+spam.clf <- mlr::train(spam.lrn, spam.tsk)
+splits <- getLearnerModel(spam.clf)
+# check out CP, default gini index
+#summary(splits)
+# which variables are most important?
+dat <- data.frame(vars=names(splits$variable.importance), 
+                  importance=splits$variable.importance)
+# plot the feature importances
+ggplot(dat, aes(reorder(vars, importance, sum), importance))+
+    coord_flip()+
+    geom_col()+
+    theme(legend.position = "bottom", 
+            legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))+
+    ggtitle("Figure 7: rpart Feature Importance")+
+    xlab("Feature Splits")+
+    ylab("Importance Value")
+```
+Per the figure 7 above, we found that percaps is the most important feature in defining the spam messages using the rpart base model. perCaps  is the percentage of capital alpha characters in the body of the email. For this model, the importance is weighted  based on the sum of the impurity for each variable split. Secondly and thirdly, we can see that numLines and bodyCharCt hold the second and third most important variables in our model. 
+
+We will also look into the rpart control parameters and thier ability to classify spam emails based on fitting a separate, optimized rpart model. To do this, we will look into 4 different parameters for tuning. Below, we outline the description of these. 
+
+* Complexity parameter (cp) - A scaled complexity penalty that ranges from 0 to 1. cp is compared against the error rate related to the previous split. Any split that doesn't decrease the error rate is not considered. 
+* Minsplit - the minimum number of observations that need to exist in a node in order for the split to be attempted. 
+* Maxdepth - The maximum depth of any node of the final tree, with the root node counted at depth 0.
+* Splitting criteria - or the gini or information. It utilizes the gini index to optimize split points and entropy and information gain. 
+
+We will use decision trees to ensure we are using these parameters in such a way that we don't overfit. 
+
+#### Hyperparameter Optimization
+
+We will be exploring a discrete list of the four parameters of interest to help ensure we are running the models as quick and efficient as possible. A grid search procedure will be used in conjuction with a ten-fold cross-validation. 
+
+We are going to be using our 4 panel procedure for evaluating classification performance and maximize our true positive classification where "spam" is the positive class. We will measure this using an ROC (AUC) curve and detirmining which model provides us the greatest area under the curve. A false positive would mean that a valid email will be marked as spam. A false negative would mean that a spam message ends up in the important inbox. The latter two would mean that we have a model error. 
+
+## Results
+
+### Base Model Results
+
+Our base model listed perCaps as our most important feature followed by BodyCharCt. Given this, we will look at an rpart model that uses only perCaps and BodyCharCt.
+
+```{r perCaps_class, include=TRUE, echo=FALSE, fig.height=5, fig.width=8.5}
+# for viz purposes, log top 2 importance, fit and predict
+trainDF$perCaps <- log(1+trainDF$perCaps)
+trainDF$bodyCharCt <- log(1+trainDF$bodyCharCt)
+# obviously a lot of error when just using the top two predictors
+# needs more to be accurate!
+spam.log.tsk = makeClassifTask(id = "spam", 
+                               data = trainDF, 
+                               target = "isSpam")
+# plot decision regions based on top two importance vars
+g <- plotLearnerPrediction(learner = spam.lrn, 
+                           task = spam.log.tsk, 
+                           features=c("perCaps", "bodyCharCt"),
+                           pointsize = 0.5, 
+                           err.col="white",
+                           bg.cols = c("darkblue","green"),
+                           err.size = 0.5,
+                           err.mark="cv")
+# customize for clarity
+g+
+  ggtitle('Figure 8: Body Character Count and Percent Capitals Decision Tree')+
+  theme(legend.key.size = unit(1, "cm"),
+        legend.position = "right", 
+        legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))+     
+  guides(shape = guide_legend(override.aes = list(size = 3)))
+```
+
+
