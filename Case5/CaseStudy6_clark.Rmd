@@ -369,5 +369,534 @@ g+
         text=element_text(size=14))+     
   guides(shape = guide_legend(override.aes = list(size = 3)))
 ```
+The plot above provides a log scale visualization of the classificaiton regions. The observations in white are misclassifications while hte color boundaries represents the outcomes for the spam email. The lighter shades of blue and pink represent the lower probabilities for the perCaps and bodyCharCt classes. As we can see, using only two features in our model, we are going to see a lot of false positivs as indicated by the number of circles in the blue section. To improve upon this, we will need to include more varlaubes to increase performance, however, these two show to be a good starting point. 
+
+From here, we will use rpart to build a decision tree with 14 splits as represented below. We will start with the default decision treeas discussed in the previous section, and fit it with the training data set. 
+
+```{r tree_plot, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
+# print a pretty tree plot of our base rpart model
+prp(splits, 0, extra=1, roundint=FALSE)
+```
+
+We can see from the decision tree above that we are using bodyCharCt multiple times in the splitting process for the training data. Additionally, we can see there is a bit of misclassification particularly as you go down the tree. Particularly in the sense of when we incorrectly classify spam emails as valid. 
+
+We will now leverage the test data to produce a confusion matrix to detirmine the model performance in the table below. As mentioned previously, we will be reviewing false positive rate, false negative rate, MMCE (model misclassification error) and ROC AUC.
 
 
+```{r confusion_base, echo=FALSE, include=TRUE}
+# get confusion matrix for predictions on test
+spam.preds <- predict(spam.clf, newdata =  testDF)
+# get scores
+preds <- as.data.frame(spam.preds$data)
+# confusion matrix for default rpart
+calculateConfusionMatrix(spam.preds)
+#calculateConfusionMatrix(spam.pred, relative = TRUE)
+performance(spam.preds, measures=list(auc, mmce, fpr, fnr))
+```
+
+
+So we can have a general error and correction rate, we will be using MMCE and AUC as our KPIs on performance, as they generally indicate how well we are correctly classifiying spam and valid emails. As a diagnostic measure, we will be looking at FPR and FNR to keep our models honest. Looking at our confusion matrix above, we can see that while we do generally well in AUC, we generally struggle with false negative rates. This means that we are misclassifying 91 spam observations out of the 479 in our training set for a false negative rate of nearly 19%. MMCE is also not particularly good at 9%. Our aim moving forward will be to improve using rpart's hyperparameters. 
+
+
+#### Hyperparameter Tuning
+
+To help improve our MMCE and FNR, we will be looking at making adjustments to our complexity parameter, minimum split, maximum depth and the splitting criterion. To avoid running the model over and over again and to lighten the code usage, we will be using a grid search procedure to test the Rpart on various tuning combinations of our parameters. Below is a list of our parameters we will be exploring. 
+
+Parameter Search Criteria
+*complexity parameter (cp) -0.001, 0.01, 0.1, 0.2, 0.5,
+*minsplit - 1, 5, 10, 15, 20, 30
+*maxdepth - 1, 5, 10, 15, 20, 30
+*splitting criterion - gini, information
+
+```{r rpart_optimize, echo=FALSE, cache=TRUE, include=FALSE}
+# Leaving commented code to show setup of resampling method
+# we load resampling binary for reproducibility
+ 
+spam.resamp = makeResampleDesc(method = "CV", 
+                               iters = 10, 
+                               stratify = TRUE)
+# pull out resampling instance for reproducibility
+#spam.resamp.bin = makeResampleInstance(spam.resamp, task=spam.tsk)
+#save(spam.resamp.bin, file ="resampling_binary") # save for future use!
+load("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/resampling_binary")
+# identify search grid params - we'll brute force here based on reasonable param vals
+# can also random search over numeric ranges instead
+spam.ps = makeParamSet(
+                  makeDiscreteParam("cp", values = c(0.001, 0.01, 0.1, 0.2)),
+                  makeDiscreteParam("minsplit", values = c(1, 5, 10, 15, 20, 30)),
+                  makeDiscreteParam("maxdepth", values = c(1, 5, 10, 15, 20, 30)),
+                  makeDiscreteParam("parms", values = list(gini = list(split = c("gini")), 
+                                                           info = list(split = c("information"))))
+                 )
+# Create the grid and identify algorithm if needed
+#spam.ctrl = makeTuneControlGrid() 
+# launch parallel multicore for tuning purposes, speed
+#parallelStart(mode="multicore", cpus=4)
+# tune parameters for our learner, task, optimize results for auc
+#spam.tuned.clf = tuneParams( learner=spam.lrn, 
+#                             task=spam.tsk, 
+#                             resampling=spam.resamp.bin, # compare to same resampling method!
+#                             control=spam.ctrl, 
+#                             par.set=spam.ps, 
+#                             measures=list(auc, fpr, fnr, mmce)) # optimize for auc
+#parallelStop()
+# save tuned classifier to binary
+#save(spam.tuned.clf, file='spam.tuned.clf')
+load('/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/spam.tuned.clf')
+# create cleaned hyperparameter effect data from tuning
+data <- generateHyperParsEffectData(spam.tuned.clf, 
+                                    partial.dep = TRUE)
+# get df of tuning results
+df_models <- data$data
+# get optimal hyperparameters for use on test
+spam.opt.lrn <- setHyperPars(spam.lrn, par.vals = spam.tuned.clf$x)
+# train the model on training set
+spam.opt.clf <- mlr::train(spam.opt.lrn, spam.tsk)
+```
+
+On each parameter we ran, we performed a cross validation procedure using 10 folds of the training data using AUC as our key performance indicator. 
+
+```{r optimize_path, include=TRUE, echo=FALSE, fig.height=4, fig.width=8}
+# plot hyperparameter effects
+# this allows us to see each combination and resulting AUC performance
+# after cross-validation
+plotHyperParsEffect(data, x = "iteration", y = "auc.test.mean",
+  plot.type = "line", partial.dep.learn = "regr.randomForest")+
+  ggtitle("Figure 10: Optimization Path")+
+  ylab("Mean AUC")+
+  theme(legend.position = "bottom", 
+        legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))
+```
+
+Our optimization procedure starts to max out at roughly 0.97 of an AUC using our training data, and our optimized tree is showing to be much larger than our base model. With our plot above, we can see that we are using 50 to 100 total splits in our optimized tree. This is due to the fact that our complexity penalty is lower than our optimized gridsearch threshold at (0.01). This may be causing an overfit to our test set.
+
+```{r tune_tree_plot, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
+# get the actual rpart model
+splits <- getLearnerModel(spam.opt.clf)
+prp(splits, 0, extra=1, roundint=FALSE)
+```
+
+Our resulting model we ran generated a AUC score of greater than 0.96 with a complexity of 0.001. Additionally, the maxdepth for the decision tree nod is always 10 or higher. About half of our models use the information splitting criterion and the majority of the models use a minsplit of 10 or more. Overall, our optimizations lean towards greater splitting and a medium node depth.
+
+We can n see the complexity parameter's dominance in the figure below. The higher AUC is related to a lower CP (or complexity parameter).
+```{r cp_vs_minsplit, echo=FALSE, include=TRUE, fig.height=10, fig.width=8.5}
+# plot hyper parameter effects
+# this is a partial dependence plot showing performance based on two features
+library(mmpf)
+plotHyperParsEffect(data, x = "cp", y = "minsplit", z = "auc.test.mean",
+  plot.type = "heatmap", partial.dep.learn = "regr.randomForest")+
+  ggtitle("Figure 11: Hyperparameter Effects - Complexity and Minsplit")+
+  ylab("Mean AUC")+
+  guides(fill=guide_legend(title="Mean AUC"))+
+  theme(legend.position = "right", 
+            legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))
+```
+After exploring the rpart tuning parameters during grid sarch, we significantly increased the AUC score on our optimized model to 0.966 from 0.934, as well as decreased our MMCE from 0.089 to 0.054. IN our base model, we ran into issues with a large true negative rate (classifying spam emails as legit), which was reduced most sigfincantly of all, going from 0.190 to 0.129.
+
+
+```{r final_results, echo=FALSE, include=TRUE}
+# results of tuned model on test set
+spam.opt.preds <- predict(spam.opt.clf, newdata = testDF)
+spam.preds <- predict(spam.clf, newdata =  testDF)
+# get performance measures
+opt<-performance(spam.opt.preds, 
+            measures=list(auc, mmce, fpr, fnr))
+                
+base<-performance(spam.preds, 
+            measures=list(auc, mmce, fpr, fnr))
+# pull them into a table
+kable(cbind(optimized = round(opt,3), base = round(base,3)))
+```
+
+While our optimized model exceeded our base model on each metric, we will want to visualize the optimizations using an ROC curve, which you can see below. 
+
+``` {r roc_curve, include = TRUE, echo=FALSE, fig.height=5, fig.width=8.5}
+# plot ROC curves for base and optimized
+df = generateThreshVsPerfData(list(base = spam.preds, 
+                                   optimized = spam.opt.preds), 
+                                   measures = list(fpr, tpr))
+# plotROCCurves(df)
+qplot(x = fpr, y = tpr, color = learner, data = df$data, geom = "path")+
+  ggtitle("Figure 12: ROC Curves for Base and Optimized rpart Models")+
+  theme(legend.position = "right", 
+            legend.text=element_text(size=8),
+            legend.title = element_text(size=10),
+            axis.text.x = element_text(angle=90, vjust=0.5),
+            text=element_text(size=14))
+```
+
+Above, we can visually tell that our optimized rpart model outperforms the base rpart (with default parameters) with the more area under the curve (blue line compared to the red line). As the ROC AUC plot is made up of plotting the false positive rate with the false negative rate, we can visually see that the place where our optimized model most signficantly exceeds our base model is through it's ability to reduce true negatives that were unseen in the base model. 
+
+```{r tune_feature importances}
+# which variables are most important?
+dat <- data.frame(vars=names(splits$variable.importance), 
+                  importance=splits$variable.importance)
+# plot the feature importances
+ggplot(dat, aes(reorder(vars, importance, sum), importance))+
+    coord_flip()+
+    geom_col()+
+    theme(legend.position = "bottom", 
+            legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))+
+    ggtitle("Optimized rpart Feature Importance")+
+    xlab("Feature Splits")+
+    ylab("Importance Value")
+
+```
+Reviewing the Otpimized rpart Feature Importance, we can see that along with the perCaps adn the bodyCharCt, one of the emerging leaders with feature importance is the number of forwards in an email in detirming whether it is valid or spam. Reviewing the decision tree plot above, we can see that if the number of forwards exceeds 6 times, then an email has been valid in previous instances. 
+
+```{r, echo=FALSE, include =FALSE, eval=FALSE}
+plotHyperParsEffect(data, x = "minsplit", y = "maxdepth", z = "auc.test.mean",
+  plot.type = "heatmap", partial.dep.learn = "regr.randomForest")
+# plot ROC curves for base and optimized
+df = generateThreshVsPerfData(list(base = spam.preds, 
+                                   optimized = spam.opt.preds), 
+                                   measures = list(fpr, tpr))
+plotROCCurves(df)
+qplot(x = fpr, y = tpr, color = learner, data = df$data, geom = "path")+
+  ggtitle("test")
+# what does our optimal threshold look like for our metrics?
+n = getTaskSize(spam.tsk)
+thresh_plot = generateThreshVsPerfData(spam.preds, measures = list(fpr, fnr, mmce))
+plotThreshVsPerf(thresh_plot)+
+  ggtitle("test")
+```
+
+```{r dtree_explore, echo=FALSE, include=FALSE, eval=FALSE}
+# this block is exploration of the mlr package in R
+# optimize both fnr and fpr
+spam.ctrl = makeTuneMultiCritControlGrid()
+library(emoa)
+spam.tuned.clf = tuneParamsMultiCrit( learner = spam.lrn, 
+                                      task = spam.tsk, 
+                                      resampling = spam.resamp.bin, # compare to same resampling method!
+                                      control = spam.ctrl, 
+                                      par.set = spam.ps, 
+                                      measures = list(fnr, fpr))
+df <- as.data.frame(trafoOptPath(spam.tuned.clf$opt.path))
+df[df$fnr.test.mean+df$fpr.test.mean == min(df$fnr.test.mean+df$fpr.test.mean),] # use this to fit
+lrn = setHyperPars(makeLearner("classif.rpart"), par.vals = list(cp=0.001, minsplit=5, maxdepth=15))
+# get a list of preds for each fold
+getRRPredictionList(spam.base.clf)
+# get all ze data!
+pred <- getRRPredictions(spam.base.clf)
+head(pred$data)
+# get individual model fits, turn on models = TRUE in resample()
+spam.base.clf$models
+# establish train and test (learning curve here?)
+# 80/20 split works best
+spam.tsk = makeClassifTask(id = "spam", 
+                           data = df$ximp, 
+                           target = "isSpam", 
+                           check.data = FALSE)
+spam.lrn = makeLearner("classif.rpart",  # use rpart algorithm, gini index is default for splitting
+                        id ="spam", # give it an id
+                        fix.factors.prediction = TRUE, # control for missing class if any)
+                        predict.type = 'prob') 
+r <- generateLearningCurveData(
+  learners = spam.opt.lrn,
+  task = spam.tsk,
+  percs = seq(0.1, 1, by = 0.1),
+  measures = list(auc, setAggregation(auc, train.mean)),
+  resampling = makeResampleDesc(method = "CV", iters = 10, stratify = TRUE, predict="both"),
+  show.info = FALSE)
+plotLearningCurve(r, facet="learner")
+# try some nested resampling for unbiased error assessment
+# on an outer CV, use inner to tune params, find best
+# train model on outer CV splits based on these params and test on outer CV split
+parallelStart(mode="multicore", cpus = 4)
+tune.lrn = makeTuneWrapper(learner = spam.lrn,
+                           resampling = spam.resamp, # inner resampling loop
+                           par.set = spam.ps, # parameters to test
+                           control = spam.ctrl, # control
+                           measures = auc,
+                           show.info = FALSE)
+# unbiased test outer cross validation
+outer = makeResampleDesc("CV", iters = 3, stratify = TRUE)
+r = resample(tune.lrn, 
+             spam.tsk, 
+             resampling = outer, 
+             extract = getTuneResult,
+             measures = auc,
+             show.info = FALSE)
+parallelStop()
+getNestedTuneResultsX(r)
+data <- generateHyperParsEffectData(r, partial.dep = TRUE)
+plotHyperParsEffect(data[[1]], x = "iteration", y = "auc.test.mean",
+                    plot.type = "line", partial.dep.learn = "regr.randomForest")
+```
+
+```{r nbayes_get_data, echo=FALSE, include=FALSE, eval=FALSE}
+# RSpamData not available in R 3.4.3
+spamPath <- "Data"
+dirNames <- list.files(path = spamPath, full.names = TRUE)
+fileNames <- list.files(dirNames[1], full.names = TRUE)
+sapply(dirNames, function(x) length(list.files(x)))
+# pick random emails
+idx = c(1:5, 15, 27, 68, 69, 329, 404, 427, 516, 852, 971)
+#sampleEmail = sapply(list.files(dirNames[1], full.names = TRUE)[idx], readLines)
+# split into header and body
+splitMessage <- function(msg) {
+  splitPoint = match("", msg) # find first blank line
+  header = msg[1:(splitPoint-1)] # get header, will use this for attachments
+  body = msg[ -(1:splitPoint) ] # get body
+  return(list(header = header, body = body))
+}
+sampleSplit <- lapply(sampleEmail, splitMessage)
+# get headers
+headerList = lapply(sampleSplit, function(msg) msg$header)
+# get boundary id from multi-part email
+getBoundary<- function(header) {
+  boundaryIdx = grep("boundary=", header) # index boundary
+  boundary = gsub('"', "", header[boundaryIdx]) # replace quotes
+  gsub(".*boundary= *([^;]*);?.*", "\\1", boundary) # regexrepl with first group match
+}
+# pass boundary and body of each message
+dropAttach = function(body, boundary){
+  bString = paste("--", boundary, sep = "") 
+  bStringLocs = which(bString == body)# find start locs for each section of body
+  # -- is arbitrary
+  
+  if (length(bStringLocs) <= 1) return(body) # if no boundaries, give me back body
+  
+  eString = paste("--", boundary, "--", sep = "") # ending boundary string
+  eStringLoc = which(eString == body) # ending string loc
+  if (length(eStringLoc) == 0)  # if no ending string return first part of body
+    return(body[ (bStringLocs[1] + 1) : (bStringLocs[2] - 1)])
+  
+  # otherwise get length of body
+  n = length(body)
+  # if ending boundary string < rows, return body + ending rows after ending boundary
+  if (eStringLoc < n) 
+     return( body[ c( (bStringLocs[1] + 1) : (bStringLocs[2] - 1), 
+                    ( (eStringLoc + 1) : n )) ] )
+  
+  # finally, return body if no other conditions met
+  return( body[ (bStringLocs[1] + 1) : (bStringLocs[2] - 1) ])
+}
+# clean up punctuation, numbers, spaces
+cleanText =
+function(msg)   {
+  tolower(gsub("[[:punct:]0-9[:space:][:blank:]]+", " ", msg))
+}
+findMsgWords = 
+function(msg, stopWords) {
+ if(is.null(msg))
+  return(character())
+  # split and return vector of cleaned words
+ words = unique(unlist(strsplit(cleanText(msg), "[[:blank:]\t]+")))
+ 
+ # drop empty and 1 letter words
+ words = words[ nchar(words) > 1]
+ words = words[ !( words %in% stopWords) ]
+ invisible(words)
+}
+processAllWords = function(dirName, stopWords)
+{
+  # read all files in a given directory
+  fileNames = list.files(dirName, full.names = TRUE)
+  # drop files that are not email
+  notEmail = grep("cmds$", fileNames)
+  
+  if ( length(notEmail) > 0) fileNames = fileNames[ - notEmail ]
+  # read all messages into a list
+  messages = lapply(fileNames, readLines, encoding = "latin1")
+  
+  # split header and body for each message
+  emailSplit = lapply(messages, splitMessage)
+  # put body and header in own lists
+  bodyList = lapply(emailSplit, function(msg) msg$body)
+  headerList = lapply(emailSplit, function(msg) msg$header)
+  # save some memory, kill emailSplit var
+  rm(emailSplit)
+  
+  # determine which messages have attachments
+  hasAttach = sapply(headerList, function(header) {
+    CTloc = grep("Content-Type", header)
+    if (length(CTloc) == 0) return(0)
+    multi = grep("multi", tolower(header[CTloc])) 
+    if (length(multi) == 0) return(0)
+    multi # has attachment
+  })
+  
+  # get indices for which messages have attachments
+  hasAttach = which(hasAttach > 0)
+  
+  # find boundary strings for messages with attachments
+  boundaries = sapply(headerList[hasAttach], getBoundary)
+  
+  # drop attachments from message bodies
+  bodyList[hasAttach] = mapply(dropAttach, bodyList[hasAttach], 
+                               boundaries, SIMPLIFY = FALSE)
+  
+  # extract words from body
+  msgWordsList = lapply(bodyList, findMsgWords, stopWords)
+  
+  invisible(msgWordsList)
+}
+msgWordsList = lapply(dirNames, processAllWords, stopWords=stopWords)
+numMsgs = sapply(msgWordsList, length)
+# identify which messages are spam based on num Msgs
+isSpam = rep(c(FALSE, FALSE, FALSE, TRUE, TRUE), numMsgs)
+# list of vectors of cleaned words for each message
+msgWordsList = unlist(msgWordsList, recursive = FALSE)
+```
+
+``` {r nbayes_train_test_split, echo=FALSE, include=FALSE, eval=FALSE}
+set.seed(418910)
+numEmail = length(isSpam)
+numSpam = sum(isSpam)
+numHam = numEmail - numSpam
+# take 1/3 of data for testing from each class spam ham
+testSpamIdx = sample(numSpam, size =floor(numSpam/3))
+testHamIdx = sample(numHam, size=floor(numHam/3))
+# get word vectors from msgWordsList
+# test
+testMsgWords = c((msgWordsList[isSpam])[testSpamIdx],
+                 (msgWordsList[!isSpam])[testHamIdx])
+# train
+trainMsgWords = c((msgWordsList[isSpam])[-testSpamIdx],
+                 (msgWordsList[!isSpam])[-testHamIdx])
+# get labels for train and test
+testIsSpam = rep(c(TRUE, FALSE), 
+                 c(length(testSpamIdx), length(testHamIdx)))
+trainIsSpam = rep(c(TRUE, FALSE), 
+                 c(numSpam - length(testSpamIdx), 
+                   numHam - length(testHamIdx)))
+```
+
+```{r nbayes_freq_table, echo=FALSE, include=FALSE, eval=FALSE}
+computeFreqs <- function(wordsList, spam, bow = unique(unlist(wordsList))) {
+   # create a matrix for spam, ham, and log odds
+  wordTable = matrix(0.5, nrow = 4, ncol = length(bow), # default value is 0.5
+                     dimnames = list(c("spam", "ham",  # name dimensions
+                                        "presentLogOdds", 
+                                        "absentLogOdds"),  bow))
+  # build frequency table 
+  # For each spam message, add 1 to counts for words in message
+  counts.spam = table(unlist(lapply(wordsList[spam], unique)))
+  wordTable["spam", names(counts.spam)] = counts.spam + .5
+   # Similarly for ham messages
+  counts.ham = table(unlist(lapply(wordsList[!spam], unique)))  
+  wordTable["ham", names(counts.ham)] = counts.ham + .5  
+   # Find the total number of spam and ham
+  numSpam = sum(spam) # from T/F vector passed to func
+  numHam = length(spam) - numSpam
+  # Prob(word|spam) and Prob(word | ham)
+  # compute probabilities for each word given spam or ham
+  wordTable["spam", ] = wordTable["spam", ]/(numSpam + .5)
+  wordTable["ham", ] = wordTable["ham", ]/(numHam + .5)
+  
+   # calculate log odds
+  # log odds of presence
+  wordTable["presentLogOdds", ] = 
+     log(wordTable["spam",]) - log(wordTable["ham", ])
+  # log odds of absence
+  wordTable["absentLogOdds", ] = 
+     log((1 - wordTable["spam", ])) - log((1 -wordTable["ham", ]))
+  invisible(wordTable)
+}
+```
+
+```{r nbayes_classify, echo=FALSE, include=FALSE, eval=FALSE}
+# use our frequency and odds table to classify new messages
+computeMsgLLR = function(words, freqTable) 
+{
+       # Discards words not in training data.
+  words = words[!is.na(match(words, colnames(freqTable)))]
+       # Find which words are present
+  present = colnames(freqTable) %in% words
+  sum(freqTable["presentLogOdds", present]) +
+    sum(freqTable["absentLogOdds", !present])
+}
+testLLR = sapply(testMsgWords, computeMsgLLR, trainTable)
+tapply(testLLR, testIsSpam, summary)
+pdf("SP_Boxplot.pdf", width = 6, height = 6)
+spamLab = c("ham", "spam")[1 + testIsSpam]
+boxplot(testLLR ~ spamLab, ylab = "Log Likelihood Ratio",
+      #  main = "Log Likelihood Ratio for Randomly Chosen Test Messages",
+        ylim=c(-500, 500))
+dev.off()
+typeIErrorRate = 
+function(tau, llrVals, spam)
+{
+  classify = llrVals > tau
+  sum(classify & !spam)/sum(!spam)
+}
+typeIErrorRate(0, testLLR,testIsSpam)
+typeIErrorRate(-20, testLLR,testIsSpam)
+typeIErrorRates = 
+function(llrVals, isSpam) 
+{
+  o = order(llrVals)
+  llrVals =  llrVals[o]
+  isSpam = isSpam[o]
+  idx = which(!isSpam)
+  N = length(idx)
+  list(error = (N:1)/N, values = llrVals[idx])
+}
+typeIIErrorRates = function(llrVals, isSpam) {
+    
+  o = order(llrVals)
+  llrVals =  llrVals[o]
+  isSpam = isSpam[o]
+    
+    
+  idx = which(isSpam)
+  N = length(idx)
+  list(error = (1:(N))/N, values = llrVals[idx])
+  }  
+xI = typeIErrorRates(testLLR, testIsSpam)
+xII = typeIIErrorRates(testLLR, testIsSpam)
+tau01 = round(min(xI$values[xI$error <= 0.01]))
+t2 = max(xII$error[ xII$values < tau01 ])
+pdf("LinePlotTypeI+IIErrors.pdf", width = 8, height = 6)
+library(RColorBrewer)
+cols = brewer.pal(9, "Set1")[c(3, 4, 5)]
+plot(xII$error ~ xII$values,  type = "l", col = cols[1], lwd = 3,
+     xlim = c(-300, 250), ylim = c(0, 1),
+     xlab = "Log Likelihood Ratio Values", ylab="Error Rate")
+points(xI$error ~ xI$values, type = "l", col = cols[2], lwd = 3)
+legend(x = 50, y = 0.4, fill = c(cols[2], cols[1]),
+       legend = c("Classify Ham as Spam", 
+                  "Classify Spam as Ham"), cex = 0.8,
+       bty = "n")
+abline(h=0.01, col ="grey", lwd = 3, lty = 2)
+text(-250, 0.05, pos = 4, "Type I Error = 0.01", col = cols[2])
+mtext(tau01, side = 1, line = 0.5, at = tau01, col = cols[3])
+segments(x0 = tau01, y0 = -.50, x1 = tau01, y1 = t2, 
+         lwd = 2, col = "grey")
+text(tau01 + 20, 0.05, pos = 4,
+     paste("Type II Error = ", round(t2, digits = 2)), 
+     col = cols[1])
+dev.off()
+k = 5
+numTrain = length(trainMsgWords)
+partK = sample(numTrain)
+tot = k * floor(numTrain/k)
+partK = matrix(partK[1:tot], ncol = k)
+testFoldOdds = NULL
+for (i in 1:k) {
+  foldIdx = partK[ , i]
+  trainTabFold = computeFreqs(trainMsgWords[-foldIdx], trainIsSpam[-foldIdx])
+  testFoldOdds = c(testFoldOdds, 
+               sapply(trainMsgWords[ foldIdx ], computeMsgLLR, trainTabFold))
+}
+testFoldSpam = NULL
+for (i in 1:k) {
+  foldIdx = partK[ , i]
+  testFoldSpam = c(testFoldSpam, trainIsSpam[foldIdx])
+}
+xFoldI = typeIErrorRates(testFoldOdds, testFoldSpam)
+xFoldII = typeIIErrorRates(testFoldOdds, testFoldSpam)
+tauFoldI = round(min(xFoldI$values[xFoldI$error <= 0.01]))
+tFold2 = xFoldII$error[ xFoldII$values < tauFoldI ]
+```
