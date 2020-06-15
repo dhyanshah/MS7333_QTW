@@ -1,0 +1,993 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Load the libraries
+```{r libraries}
+library(magrittr)
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tm)
+library(rpart)
+library(caret)
+library(mlr)
+library(parallelMap)
+library(doParallel)
+library(missForest)
+library(scales)
+library(ggthemes)
+library(GGally)
+library(ltm)
+library(rpart.plot)
+library(knitr)
+```
+
+```{r, load data}
+getwd()
+setwd("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials")
+
+load("data.Rda") 
+```
+
+
+Finding the full path name into the RSpamData directory with RSpamData and then list the files in RSpamData with listfiles and directories. 
+
+We are going to rename and relevel variables for better interpretation. 
+```{r spampat}
+emailDFrp$isSpam <- emailDFrp$isSpam %>% 
+                      revalue(c("T"="Spam", "F"="Valid")) %>% 
+                        relevel("Spam")
+```
+
+
+Next we will impute the missing values based on the random forest classification and regesssion using a parallel method. 
+
+```{r parallel}
+registerDoParallel(cores=4)
+
+df <- missForest(emailDFrp, 
+                 maxiter=5, 
+                 ntree=200, 
+                 parallelize = c('forests'),
+                 variablewise = TRUE)
+
+# establish imputed set
+emailDFrp <- df$ximp
+```
+
+
+#### Exploratory Data Analysis
+
+A preliminary evaluation of the dataset found missing observations in over 300 rows. More specifically, we have missing values for the following predictor variables. 
+
+* subSpamWords
+* subQuesCt
+* subExcCt
+* SubBlanks
+* numRec
+* noHost
+* isYelling
+
+Since this represents a significant portion of our dataset, we will look to impute the missing values using random forest regression and classification for the numeric and categorical predictor variables. 
+
+```{r imputation, include=TRUE, echo=FALSE}
+# get dataset balance, show via barchart
+emailDFrp %>% 
+  group_by(isSpam) %>% 
+    dplyr::summarise(Count=n()) %>% 
+      mutate(Pct = Count/sum(Count)) %>%
+      ggplot(aes(x=isSpam, y=Count, label=comma(Count))) + 
+      geom_bar(stat='identity') +  theme_light() + 
+      ggtitle("Figure 1: Spam vs. Non-Spam Split") + 
+      scale_y_continuous("Count", labels =comma, limits=c(0,7500)) + 
+      scale_x_discrete("Response Variable Category")  + 
+      geom_text(vjust=-0.5)+
+      theme(text=element_text(size=14))
+```
+
+The chart above shows that we have an unbalanced dataset with nearly 2,400 spam emails along with nearly 7,000 nonspam email (valid) emails. This means that 1 out of every 4 emails in our set are considered spam. The reason we show you this is to highlight the fact that we will need to account for this in our future modeling practice, and ensure that we are turning and training our models such that they are not being rewarded for leaning too much on assigning the valid class to new valid. That said, since the unbalance isn't huge, we will not need to apply oversampling mehtods to address this issue. 
+
+##### Explanatory Variable Relationships
+
+With Regards to our imputed dataset, the correlation matrix shows that we have some positive relationships between our numerical predictors, which shows promising when it comes time to build our regression procedure. 
+
+```{r correlation plot, include = TRUE, cache=TRUE, echo=FALSE}
+
+# build correlation matrix
+AsVector <- emailDFrp[, c(2:30)]
+nums <- sapply(AsVector, is.numeric)
+bools <- sapply(AsVector, is.factor)
+# correlation matrix for numerical features
+cormat <- (round(cor(AsVector[, nums]), 2))
+cormat[lower.tri(cormat, diag=TRUE)] <- NA
+cormat <- reshape2::melt(cormat, na.rm = TRUE)
+# plot correlation matrix
+cormat %>% ggplot(aes(x=Var1, y=Var2, fill=value)) + 
+           geom_tile() + 
+           geom_text(aes(Var1, Var2, label = value), color = "white", size = 4)+
+           theme(legend.position = "right", 
+                 axis.text.x = element_text(angle=90, 
+                                            vjust=-.5),
+                 legend.text=element_text(size=10),
+                 text=element_text(size=14)) + 
+           scale_x_discrete("") + 
+           scale_y_discrete("") + 
+           ggtitle("Figure 2: Correlation Between Numeric Predictor Variable Pairs")+
+           guides(fill=guide_legend(title="Correlation"))
+
+```
+
+Looking at the data, we can see three positive relationships can be pointed out.
+
+* bodyCharct and numLines
+* bodyCharct and perHTML
+* numDir and subQuesCt
+
+While not too high, the correlation of these predictors can potentially be overweighed in our modeling procedures, due to the fact that they might not be independent. For example, numLines and bodyCharct are both functions of the length of the email in question, so they are very similar metrics. However, if we use recursive partitioning in our modeling, the collinearity between these three pairs of variables will be accounted for, by selecting the most important variable if similar variables are found. 
+
+Looking at the non-numerical values in our dataset, we can see that we have 16 boolean values that we can factor our model into as well. To do so, we will employ the Fisher's exact p-test to show the resulting p-values for our dichotomous variables, which we will use as a numerical comparison similar to how we used correlation on our numerical variables. 
+
+```{r fisher's test, include=TRUE, cache=TRUE, echo=FALSE}
+
+# fisher exact matrix for categorical features
+# get booleans
+Dat <- AsVector[, bools]
+# source combos of each var
+combos <- combn(ncol(Dat), 2)
+# apply fishers to each combo and capture in df
+fishers <- adply(combos, 2, function(x) {
+  test <- fisher.test(Dat[, x[1]], Dat[, x[2]])
+  out <- data.frame("Row" = colnames(Dat)[x[1]]
+                    , "Column" = colnames(Dat[x[2]])
+                    , "OddsRatio" = test$estimate
+                    ,  "type"= test$alternative
+                    ,  "p.value" = round(test$p.value, 2)
+                    )
+  return(out)
+})  
+# plot fisher matrix
+fishers %>% 
+  ggplot(aes(x=Row, y=Column, fill = p.value)) + 
+  geom_tile() + 
+  geom_text(aes(Row, Column, label = p.value), color = "white", size = 3)+
+  theme(legend.position = "right", 
+        legend.text=element_text(size=10),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14)) +
+        scale_y_discrete("") + 
+        scale_x_discrete("Predictor Variable") + 
+        ggtitle("Figure 3: Fisher's Exact Test for Boolean Predictor Variables")
+```
+
+The lower p values indicate that we reject the null of a randomized assocation between dichotomous variables. Here we can see that there are some large non random dependencies for variables such as isWrote which indicate whether an email is electronically scribed. Since this is apparent in almost all instances, we can likely remove. HOwever, there are some instances for variables such as priority and noHost which may be interesting for classifying spam or not spam. This would make sense as the lack of host name and sender are variables written by the email sender.
+
+We can also visually review the correlation between factors and continuous variables using a biserial correlation (as we have dichotomous factors for all of our non-continuous variables). Upon review, we can see some relationships emerge. 
+
+```{r biser_cor, include=TRUE, echo=FALSE, cache=TRUE, fig.height=7, fig.width=8.5}
+# we use biserial correlation in order to get a more accurate picture of factor v continous relationships
+# get all data except response
+Dat <- AsVector
+# identify factor and numeric vars for biserial correlation
+facs_indx <- which(lapply(AsVector, is.factor) == TRUE)
+facs <- AsVector[,facs_indx]
+nums <- AsVector[,-facs_indx]
+# establish df of correlations
+df <- as.data.frame(lapply(nums, function(x) sapply(facs, function(y) biserial.cor(x, y))))
+# melt it for viz purposes
+df <- reshape::melt(as.matrix(df))
+df$value <- round(df$value, 2)
+# plot the relationships
+df %>% 
+  ggplot(aes(x=X1, y=X2, fill=value)) + 
+  geom_tile() + 
+  geom_text(aes(X1, X2, label = value), color = "white", size = 3)+
+  theme(legend.position = "right", 
+        legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14)) +
+  scale_y_discrete("") + scale_x_discrete("Categorical Predictor Variable") + 
+  ggtitle("Figure 4: Biserial Correlation - Factor and Continuous Predictors")+
+  guides(fill=guide_legend(title="Correlation"))
+```
+
+Reviewing the plot further, we can see that the number of attachments (numAtt) has a negative correlation with the boolean value of multipartText. Multipart text messages typically do not typically have attachments. In addition, we are seeing that the variable for number of forwards has a negative correlation to isInReplyTo, which suggests that the replies do not typically have a ton of forwards. 
+
+Overall, we will look into ways that continuous and factor variables can be used to predict the variable isSpam while also pulling out the variable importances int he rpart package. 
+
+#### Response Variable Relationships
+
+As we mentioned before, the majority of our instances in our dataset are not considered spam. That said, we can visualize the relationships between spam and valid emails for the factor and continuous predictor variables using different plotting techniques. 
+
+First, we will look forther into isRe, numEnd, subSpamWords and isWrote. The variable numEnd indicates whether or not the 'from' email prefix ends with a number, such as 'clark.daniel424@gmail.com.'
+
+```{r bool_impact, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
+# which factor variables are worth splitting?
+# plot counts of each variable based on their boolean status and the counts
+# of spam and valid
+emailDFrp[, c(1,which(bools)+1)] %>% 
+  gather(Predictor, Value, 2:ncol(emailDFrp[,c(1, which(bools)+1)])) %>% 
+    filter(Predictor %in% c("isRe", "numEnd", "subSpamWords", "isWrote")) %>%
+      ggplot(aes(x=isSpam)) + 
+      geom_bar() + 
+      facet_grid(Value~Predictor) + 
+      theme_light() + 
+      theme(legend.position = "bottom", 
+            legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))+
+      ggtitle("Figure 5: Boolean Predictor Variables and Spam Outcomes", 
+               subtitle = "Y Axis Faceting Shows Spam or Valid Email for Each Predictor") +       
+    scale_y_continuous("Count", labels =comma) + 
+    scale_x_discrete("Is Spam - True or False")
+```
+
+In the chart above, subSpamWords is a boolean that indicates when a known "spam word" is indicated in the subject of an email, such as "viagra" which would trigger a value for subSpamwords. The majority of our spam cases happen when our factors are set to false. Additionally, the mostly valid emails are related to instances when isRe and isWrote are set to true. This will prove to be usefil when seeing how a decision tree can be split between our categorical variables in the decision function to detirmine if an email is spam or not spam. 
+
+We will also look into the separation of classes for numeric variables by looking at the log values for our numeric placements in a box plots. We will review some of the interesting numerics in the figure below. 
+
+
+```{r numeric_impact, include = TRUE, echo=FALSE, cache = TRUE, fig.width=8.5, fig.height=3}
+# get boxplots of key numeric predictors, split by outcome status valid or spam
+nums <- which(lapply(emailDFrp, is.numeric) ==TRUE) 
+# aggregate and plot boxes
+emailDFrp[,c(1, nums)] %>% 
+  gather(Predictor, Value, 2:ncol(emailDFrp[,c(1, nums)])) %>% 
+    filter(Predictor %in% c("forwards", "perCaps", "perHTML", "numLines", 'bodyCharCt')) %>%
+      ggplot(aes(x=isSpam, y=log(1+Value))) + 
+      geom_boxplot(outlier.size=0.25, position="dodge") + 
+      facet_wrap(~Predictor, scales = "free_y", ncol=5) + 
+      theme_light() + 
+      theme(legend.position = "bottom", 
+            legend.text=element_text(size=8),
+            legend.title = element_text(size=10),
+            axis.text.x = element_text(angle=90, vjust=0.5),
+            text=element_text(size=14))+
+      ggtitle("Figure 6: Continous Predictor Variables and Spam Outcomes") + 
+      scale_x_discrete("Spam or Valid Email")+
+      ylab("Log Value")
+```
+
+The forwards predictor variable, shows a great concentration of value distribution for the third quartile of messages that are labeled as valid. The perCaps predictor variable shows a larger predictor interval for spam than valid emails. We can also see that the median value for spam is higher than the valid messages. On Per HTML, the mean and median value for valid emails is nearly zero while the range is much greater for the spam messages.
+
+Examination of these predictor variables indicates that we may have some leads to uncovering a predictor and an important features related to detecting spam. 
+
+#### Variable Selection and Model Comparison Setup
+
+In hopes to avoid the complexity of variable selection algorithms to run an algorithm against our email data set, we will set up a fit of an rpart model using the training data an all 29 features and default model parameters. For the default parameters for rpart, we will use a minsplit of 20 along with a complexity parameter of 0.01 with a max depth of 30. The splitting criteria will use the default Gini Index. 
+
+for our setup, we will use an 80/20 split between the training and testing set. Since we have an imbalanced relationship between spam emails and valid emails, we can use a stratified sampling of the observations in our training and testing data sets to ensure we maintain the original balance. We have 9,000 total observations, so this would mean that our testing set will have roughly 1,800 observations. 
+
+As we will run a series of models in our experiment, we will maintain this distribution of training and testing data for each model to ensure that we are running a valid experiment. As our rpart is trained, it will provide a listing of variables that are playing the greatest role in deciding upon valid or spam email. The chart below provides the most important features using the rpart base model. 
+
+```{r fit_dtree_base, echo=FALSE, include=TRUE, fig.height=5, fig.width=8.5}
+# we fit the base rpart model in this block
+set.seed(4)
+# get counts to prep for train/test split
+spam <- emailDFrp$isSpam == "Spam"
+numSpam <- sum(spam)
+numHam <- sum(!spam)
+# 80/20 split, stratified
+testSpamIdx <- sample(numSpam, size = floor(numSpam/5))
+testHamIdx <- sample(numHam, size = floor(numHam/5))
+# pull together stratified train and test sets with training 80 pct
+testDF <- 
+  rbind( emailDFrp[emailDFrp$isSpam == "Spam", ][testSpamIdx, ],
+         emailDFrp[emailDFrp$isSpam == "Valid", ][testHamIdx, ])
+trainDF <-
+  rbind( emailDFrp[emailDFrp$isSpam == "Spam", ][-testSpamIdx, ], 
+         emailDFrp[emailDFrp$isSpam == "Valid", ][-testHamIdx, ])
+# initiate mlr classification task
+# set up a learning task placeholder
+spam.tsk = makeClassifTask(id = "spam", 
+                           data = trainDF, 
+                           target = "isSpam")
+# Create the learner from embedded libraries
+spam.lrn = makeLearner( cl = "classif.rpart",# use rpart algorithm, gini index is default for splitting
+                        id ="spam", # give it an id
+                        fix.factors.prediction = TRUE, # control for missing class if any)
+                        predict.type = 'prob') # to get probabilities
+# focus on maxdepth, cp and minsplit
+# show defaults - cp = 0.01, minsplit=20, maxdepth=30
+#getParamSet(spam.lrn) 
+# fit with defaults, cp = 0.01
+spam.clf <- mlr::train(spam.lrn, spam.tsk)
+splits <- getLearnerModel(spam.clf)
+# check out CP, default gini index
+#summary(splits)
+# which variables are most important?
+dat <- data.frame(vars=names(splits$variable.importance), 
+                  importance=splits$variable.importance)
+# plot the feature importances
+ggplot(dat, aes(reorder(vars, importance, sum), importance))+
+    coord_flip()+
+    geom_col()+
+    theme(legend.position = "bottom", 
+            legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))+
+    ggtitle("Figure 7: rpart Feature Importance")+
+    xlab("Feature Splits")+
+    ylab("Importance Value")
+```
+Per the figure 7 above, we found that percaps is the most important feature in defining the spam messages using the rpart base model. perCaps  is the percentage of capital alpha characters in the body of the email. For this model, the importance is weighted  based on the sum of the impurity for each variable split. Secondly and thirdly, we can see that numLines and bodyCharCt hold the second and third most important variables in our model. 
+
+We will also look into the rpart control parameters and thier ability to classify spam emails based on fitting a separate, optimized rpart model. To do this, we will look into 4 different parameters for tuning. Below, we outline the description of these. 
+
+* Complexity parameter (cp) - A scaled complexity penalty that ranges from 0 to 1. cp is compared against the error rate related to the previous split. Any split that doesn't decrease the error rate is not considered. 
+* Minsplit - the minimum number of observations that need to exist in a node in order for the split to be attempted. 
+* Maxdepth - The maximum depth of any node of the final tree, with the root node counted at depth 0.
+* Splitting criteria - or the gini or information. It utilizes the gini index to optimize split points and entropy and information gain. 
+
+We will use decision trees to ensure we are using these parameters in such a way that we don't overfit. 
+
+#### Hyperparameter Optimization
+
+We will be exploring a discrete list of the four parameters of interest to help ensure we are running the models as quick and efficient as possible. A grid search procedure will be used in conjuction with a ten-fold cross-validation. 
+
+We are going to be using our 4 panel procedure for evaluating classification performance and maximize our true positive classification where "spam" is the positive class. We will measure this using an ROC (AUC) curve and detirmining which model provides us the greatest area under the curve. A false positive would mean that a valid email will be marked as spam. A false negative would mean that a spam message ends up in the important inbox. The latter two would mean that we have a model error. 
+
+## Results
+
+### Base Model Results
+
+Our base model listed perCaps as our most important feature followed by BodyCharCt. Given this, we will look at an rpart model that uses only perCaps and BodyCharCt.
+
+```{r perCaps_class, include=TRUE, echo=FALSE, fig.height=5, fig.width=8.5}
+# for viz purposes, log top 2 importance, fit and predict
+trainDF$perCaps <- log(1+trainDF$perCaps)
+trainDF$bodyCharCt <- log(1+trainDF$bodyCharCt)
+# obviously a lot of error when just using the top two predictors
+# needs more to be accurate!
+spam.log.tsk = makeClassifTask(id = "spam", 
+                               data = trainDF, 
+                               target = "isSpam")
+# plot decision regions based on top two importance vars
+g <- plotLearnerPrediction(learner = spam.lrn, 
+                           task = spam.log.tsk, 
+                           features=c("perCaps", "bodyCharCt"),
+                           pointsize = 0.5, 
+                           err.col="white",
+                           bg.cols = c("darkblue","green"),
+                           err.size = 0.5,
+                           err.mark="cv")
+# customize for clarity
+g+
+  ggtitle('Figure 8: Body Character Count and Percent Capitals Decision Tree')+
+  theme(legend.key.size = unit(1, "cm"),
+        legend.position = "right", 
+        legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))+     
+  guides(shape = guide_legend(override.aes = list(size = 3)))
+```
+The plot above provides a log scale visualization of the classificaiton regions. The observations in white are misclassifications while hte color boundaries represents the outcomes for the spam email. The lighter shades of blue and pink represent the lower probabilities for the perCaps and bodyCharCt classes. As we can see, using only two features in our model, we are going to see a lot of false positivs as indicated by the number of circles in the blue section. To improve upon this, we will need to include more varlaubes to increase performance, however, these two show to be a good starting point. 
+
+From here, we will use rpart to build a decision tree with 14 splits as represented below. We will start with the default decision treeas discussed in the previous section, and fit it with the training data set. 
+
+```{r tree_plot, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
+# print a pretty tree plot of our base rpart model
+prp(splits, 0, extra=1, roundint=FALSE)
+
+rpart.plot(splits, type=3, clip.right.labs=FALSE, branch=.3)
+rpart.rules(splits, extra = 4, clip.facs = TRUE)
+
+
+library(plotmo)
+plotmo(splits, type = "prob", nresponse = "Spam")
+
+plotmo(splits, type = "prob", nresponse = "Spam", type2 = "image", ngrid2 = 200, pt.col = ifelse(kyphosis$Kyphosis == "present", "red", "lightblue"))
+```
+
+We can see from the decision tree above that we are using bodyCharCt multiple times in the splitting process for the training data. Additionally, we can see there is a bit of misclassification particularly as you go down the tree. Particularly in the sense of when we incorrectly classify spam emails as valid. 
+
+We will now leverage the test data to produce a confusion matrix to detirmine the model performance in the table below. As mentioned previously, we will be reviewing false positive rate, false negative rate, MMCE (model misclassification error) and ROC AUC.
+
+
+```{r confusion_base, echo=FALSE, include=TRUE}
+# get confusion matrix for predictions on test
+spam.preds <- predict(spam.clf, newdata =  testDF)
+# get scores
+preds <- as.data.frame(spam.preds$data)
+# confusion matrix for default rpart
+calculateConfusionMatrix(spam.preds)
+#calculateConfusionMatrix(spam.pred, relative = TRUE)
+performance(spam.preds, measures=list(auc, mmce, fpr, fnr))
+```
+
+
+So we can have a general error and correction rate, we will be using MMCE and AUC as our KPIs on performance, as they generally indicate how well we are correctly classifiying spam and valid emails. As a diagnostic measure, we will be looking at FPR and FNR to keep our models honest. Looking at our confusion matrix above, we can see that while we do generally well in AUC, we generally struggle with false negative rates. This means that we are misclassifying 91 spam observations out of the 479 in our training set for a false negative rate of nearly 19%. MMCE is also not particularly good at 9%. Our aim moving forward will be to improve using rpart's hyperparameters. 
+
+
+#### Hyperparameter Tuning
+
+To help improve our MMCE and FNR, we will be looking at making adjustments to our complexity parameter, minimum split, maximum depth and the splitting criterion. To avoid running the model over and over again and to lighten the code usage, we will be using a grid search procedure to test the Rpart on various tuning combinations of our parameters. Below is a list of our parameters we will be exploring. 
+
+Parameter Search Criteria
+*complexity parameter (cp) -0.001, 0.01, 0.1, 0.2, 0.5,
+*minsplit - 1, 5, 10, 15, 20, 30
+*maxdepth - 1, 5, 10, 15, 20, 30
+*splitting criterion - gini, information
+
+```{r rpart_optimize, echo=FALSE, cache=TRUE, include=FALSE}
+# Leaving commented code to show setup of resampling method
+# we load resampling binary for reproducibility
+ 
+spam.resamp = makeResampleDesc(method = "CV", 
+                               iters = 10, 
+                               stratify = TRUE)
+# pull out resampling instance for reproducibility
+#spam.resamp.bin = makeResampleInstance(spam.resamp, task=spam.tsk)
+#save(spam.resamp.bin, file ="resampling_binary") # save for future use!
+load("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/resampling_binary")
+# identify search grid params - we'll brute force here based on reasonable param vals
+# can also random search over numeric ranges instead
+spam.ps = makeParamSet(
+                  makeDiscreteParam("cp", values = c(0.001, 0.01, 0.1, 0.2)),
+                  makeDiscreteParam("minsplit", values = c(1, 5, 10, 15, 20, 30)),
+                  makeDiscreteParam("maxdepth", values = c(1, 5, 10, 15, 20, 30)),
+                  makeDiscreteParam("parms", values = list(gini = list(split = c("gini")), 
+                                                           info = list(split = c("information"))))
+                 )
+# Create the grid and identify algorithm if needed
+#spam.ctrl = makeTuneControlGrid() 
+# launch parallel multicore for tuning purposes, speed
+#parallelStart(mode="multicore", cpus=4)
+# tune parameters for our learner, task, optimize results for auc
+# spam.tuned.clf = tuneParams( learner=spam.lrn, 
+#                             task=spam.tsk, 
+#                             resampling=spam.resamp.bin, # compare to same resampling method!
+#                             control=spam.ctrl, 
+#                             par.set=spam.ps, 
+#                             measures=list(auc, fpr, fnr, mmce)) # optimize for auc
+#parallelStop()
+# save tuned classifier to binary
+#save(spam.tuned.clf, file='spam.tuned.clf')
+load('/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/spam.tuned.clf')
+# create cleaned hyperparameter effect data from tuning
+data <- generateHyperParsEffectData(spam.tuned.clf, 
+                                    partial.dep = TRUE)
+# get df of tuning results
+df_models <- data$data
+# get optimal hyperparameters for use on test
+spam.opt.lrn <- setHyperPars(spam.lrn, par.vals = spam.tuned.clf$x)
+# train the model on training set
+spam.opt.clf <- mlr::train(spam.opt.lrn, spam.tsk)
+```
+
+On each parameter we ran, we performed a cross validation procedure using 10 folds of the training data using AUC as our key performance indicator. 
+
+```{r optimize_path, include=TRUE, echo=FALSE, fig.height=4, fig.width=8}
+# plot hyperparameter effects
+# this allows us to see each combination and resulting AUC performance
+# after cross-validation
+plotHyperParsEffect(data, x = "iteration", y = "auc.test.mean",
+  plot.type = "line", partial.dep.learn = "regr.randomForest")+
+  ggtitle("Figure 10: Optimization Path")+
+  ylab("Mean AUC")+
+  theme(legend.position = "bottom", 
+        legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))
+```
+
+Our optimization procedure starts to max out at roughly 0.97 of an AUC using our training data, and our optimized tree is showing to be much larger than our base model. With our plot above, we can see that we are using 50 to 100 total splits in our optimized tree. This is due to the fact that our complexity penalty is lower than our optimized gridsearch threshold at (0.01). This may be causing an overfit to our test set.
+
+```{r tune_tree_plot, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
+# get the actual rpart model
+splits <- getLearnerModel(spam.opt.clf)
+prp(splits, 0, extra=1, roundint=FALSE)
+
+rpart.plot(splits)
+```
+
+Our resulting model we ran generated a AUC score of greater than 0.96 with a complexity of 0.001. Additionally, the maxdepth for the decision tree nod is always 10 or higher. About half of our models use the information splitting criterion and the majority of the models use a minsplit of 10 or more. Overall, our optimizations lean towards greater splitting and a medium node depth.
+
+We can n see the complexity parameter's dominance in the figure below. The higher AUC is related to a lower CP (or complexity parameter).
+```{r cp_vs_minsplit, echo=FALSE, include=TRUE, fig.height=10, fig.width=8.5}
+# plot hyper parameter effects
+# this is a partial dependence plot showing performance based on two features
+library(mmpf)
+plotHyperParsEffect(data, x = "cp", y = "minsplit", z = "auc.test.mean",
+  plot.type = "heatmap", partial.dep.learn = "regr.randomForest")+
+  ggtitle("Figure 11: Hyperparameter Effects - Complexity and Minsplit")+
+  ylab("Mean AUC")+
+  guides(fill=guide_legend(title="Mean AUC"))+
+  theme(legend.position = "right", 
+            legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))
+```
+After exploring the rpart tuning parameters during grid sarch, we significantly increased the AUC score on our optimized model to 0.966 from 0.934, as well as decreased our MMCE from 0.089 to 0.054. IN our base model, we ran into issues with a large true negative rate (classifying spam emails as legit), which was reduced most sigfincantly of all, going from 0.190 to 0.129.
+
+
+```{r final_results, echo=FALSE, include=TRUE}
+# results of tuned model on test set
+spam.opt.preds <- predict(spam.opt.clf, newdata = testDF)
+spam.preds <- predict(spam.clf, newdata =  testDF)
+# get performance measures
+opt<-performance(spam.opt.preds, 
+            measures=list(auc, mmce, fpr, fnr))
+                
+base<-performance(spam.preds, 
+            measures=list(auc, mmce, fpr, fnr))
+# pull them into a table
+kable(cbind(optimized = round(opt,3), base = round(base,3)))
+```
+
+# Ensemble Hyper Parameter Tuning
+
+In a parallel package (https://github.com/dhyanshah/MS7333_QTW/blob/master/Case5/Case5-Spam.ipynb) we explored a series of models and estimator tuning procedures to test which model and tuning packages would generate the highest AUC score.
+
+```{r rpart_optimize, echo=FALSE, cache=TRUE, include=FALSE}
+spam.resamp = makeResampleDesc(method = "CV", 
+                               iters = 10, 
+                               stratify = TRUE)
+# pull out resampling instance for reproducibility
+#spam.resamp.bin = makeResampleInstance(spam.resamp, task=spam.tsk)
+#save(spam.resamp.bin, file ="resampling_binary") # save for future use!
+load("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/resampling_binary")
+# identify search grid params - we'll brute force here based on reasonable param vals
+
+spam.tsk = makeClassifTask(id = "spam", 
+                           data = trainDF, 
+                           target = "isSpam")
+
+spam.lrn2 = makeLearner( cl = "classif.rpart",# use rpart algorithm, gini index is default for splitting
+                        id ="spam", # give it an id
+                        predict.type = 'prob', 
+                        fix.factors.prediction = TRUE) # control for missing class if any)
+#                        se.method = "bootstrap") # to get probabilities
+
+# can also random search over numeric ranges instead
+spam.ps2 = makeParamSet(
+                  makeDiscreteParam("cp", values = c(0)),
+                  makeDiscreteParam("minsplit", values = c(2)),
+                  makeDiscreteParam("maxdepth", values = c(23)),
+                  makeDiscreteParam("parms", values = list(gini = list(split = c("gini")), 
+                                                           info = list(split = c("information"))))
+                 )
+
+# Create the grid and identify algorithm if needed
+spam.ctrl = makeTuneControlGrid() 
+# launch parallel multicore for tuning purposes, speed
+parallelStart(mode="multicore", cpus=4)
+# tune parameters for our learner, task, optimize results for auc
+ spam.tuned.clf2 = tuneParams( learner=spam.lrn2, 
+                             task=spam.tsk, 
+                             resampling=spam.resamp.bin, # compare to same resampling method!
+                             control=spam.ctrl, 
+                             par.set=spam.ps2, 
+                             measures=list(auc, fpr, fnr, mmce)) # optimize for auc
+parallelStop()
+# save tuned classifier to binary
+#save(spam.tuned.clf, file='spam.tuned.clf')
+load('/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/spam.tuned.clf')
+# create cleaned hyperparameter effect data from tuning
+data2 <- generateHyperParsEffectData(spam.tuned.clf2, 
+                                    partial.dep = TRUE)
+# get df of tuning results
+df_models2 <- data2$data
+# get optimal hyperparameters for use on test
+spam.opt.lrn2 <- setHyperPars(spam.lrn2, par.vals = spam.tuned.clf2$x)
+# train the model on training set
+spam.opt.clf2 <- mlr::train(spam.opt.lrn2, spam.tsk)
+```
+
+```{r final_results, echo=FALSE, include=TRUE}
+# results of tuned model on test set
+spam.opt.preds <- predict(spam.opt.clf, newdata = testDF)
+spam.opt.preds2 <- predict(spam.opt.clf2, newdata = testDF)
+spam.preds <- predict(spam.clf, newdata =  testDF)
+# get performance measures
+opt<-performance(spam.opt.preds, 
+            measures=list(auc, mmce, fpr, fnr))
+
+opt2<-performance(spam.opt.preds2, 
+            measures=list(auc, mmce, fpr, fnr))                
+base<-performance(spam.preds, 
+            measures=list(auc, mmce, fpr, fnr))
+# pull them into a table
+kable(cbind(Ensemble_Optimized = round(opt2,3), optimized = round(opt,3), base = round(base,3)))
+```
+
+
+
+
+While our grid searched optimized model exceeded our base model on each metric, we will want to visualize the optimizations using an ROC curve, which you can see below. 
+
+``` {r roc_curve, include = TRUE, echo=FALSE, fig.height=5, fig.width=8.5}
+# plot ROC curves for base and optimized
+df = generateThreshVsPerfData(list(base = spam.preds, 
+                                   optimized = spam.opt.preds, 
+                                   ensemble = spam.opt.preds2), 
+                                   measures = list(fpr, tpr))
+# plotROCCurves(df)
+qplot(x = fpr, y = tpr, color = learner, data = df$data, geom = "path")+
+  ggtitle("Figure 12: ROC Curves for Base and Optimized rpart Models")+
+  theme(legend.position = "right", 
+            legend.text=element_text(size=8),
+            legend.title = element_text(size=10),
+            axis.text.x = element_text(angle=90, vjust=0.5),
+            text=element_text(size=14))
+```
+
+Above, we can visually tell that our optimized rpart model outperforms the base rpart (with default parameters) with the more area under the curve (blue line compared to the red line). As the ROC AUC plot is made up of plotting the false positive rate with the false negative rate, we can visually see that the place where our optimized model most signficantly exceeds our base model is through it's ability to reduce true negatives that were unseen in the base model. 
+
+```{r tune_feature importances}
+# which variables are most important?
+dat <- data.frame(vars=names(splits$variable.importance), 
+                  importance=splits$variable.importance)
+# plot the feature importances
+ggplot(dat, aes(reorder(vars, importance, sum), importance))+
+    coord_flip()+
+    geom_col()+
+    theme(legend.position = "bottom", 
+            legend.text=element_text(size=8),
+        legend.title = element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        text=element_text(size=14))+
+    ggtitle("Optimized rpart Feature Importance")+
+    xlab("Feature Splits")+
+    ylab("Importance Value")
+
+```
+Reviewing the Otpimized rpart Feature Importance, we can see that along with the perCaps adn the bodyCharCt, one of the emerging leaders with feature importance is the number of forwards in an email in detirming whether it is valid or spam. Reviewing the decision tree plot above, we can see that if the number of forwards exceeds 6 times, then an email has been valid in previous instances. 
+
+```{r, echo=FALSE, include =FALSE, eval=FALSE}
+plotHyperParsEffect(data, x = "minsplit", y = "maxdepth", z = "auc.test.mean",
+  plot.type = "heatmap", partial.dep.learn = "regr.randomForest")
+# plot ROC curves for base and optimized
+df = generateThreshVsPerfData(list(base = spam.preds, 
+                                   optimized = spam.opt.preds), 
+                                   measures = list(fpr, tpr))
+plotROCCurves(df)
+qplot(x = fpr, y = tpr, color = learner, data = df$data, geom = "path")+
+  ggtitle("test")
+# what does our optimal threshold look like for our metrics?
+n = getTaskSize(spam.tsk)
+thresh_plot = generateThreshVsPerfData(spam.preds, measures = list(fpr, fnr, mmce))
+plotThreshVsPerf(thresh_plot)+
+  ggtitle("test")
+```
+
+```{r dtree_explore, echo=FALSE, include=FALSE, eval=FALSE}
+# this block is exploration of the mlr package in R
+# optimize both fnr and fpr
+spam.ctrl = makeTuneMultiCritControlGrid()
+library(emoa)
+spam.tuned.clf = tuneParamsMultiCrit( learner = spam.lrn, 
+                                      task = spam.tsk, 
+                                      resampling = spam.resamp.bin, # compare to same resampling method!
+                                      control = spam.ctrl, 
+                                      par.set = spam.ps, 
+                                      measures = list(fnr, fpr))
+df <- as.data.frame(trafoOptPath(spam.tuned.clf$opt.path))
+df[df$fnr.test.mean+df$fpr.test.mean == min(df$fnr.test.mean+df$fpr.test.mean),] # use this to fit
+lrn = setHyperPars(makeLearner("classif.rpart"), par.vals = list(cp=0.001, minsplit=5, maxdepth=15))
+# get a list of preds for each fold
+getRRPredictionList(spam.base.clf)
+# get all ze data!
+pred <- getRRPredictions(spam.base.clf)
+head(pred$data)
+# get individual model fits, turn on models = TRUE in resample()
+spam.base.clf$models
+# establish train and test (learning curve here?)
+# 80/20 split works best
+spam.tsk = makeClassifTask(id = "spam", 
+                           data = df$ximp, 
+                           target = "isSpam", 
+                           check.data = FALSE)
+spam.lrn = makeLearner("classif.rpart",  # use rpart algorithm, gini index is default for splitting
+                        id ="spam", # give it an id
+                        fix.factors.prediction = TRUE, # control for missing class if any)
+                        predict.type = 'prob') 
+r <- generateLearningCurveData(
+  learners = spam.opt.lrn,
+  task = spam.tsk,
+  percs = seq(0.1, 1, by = 0.1),
+  measures = list(auc, setAggregation(auc, train.mean)),
+  resampling = makeResampleDesc(method = "CV", iters = 10, stratify = TRUE, predict="both"),
+  show.info = FALSE)
+plotLearningCurve(r, facet="learner")
+# try some nested resampling for unbiased error assessment
+# on an outer CV, use inner to tune params, find best
+# train model on outer CV splits based on these params and test on outer CV split
+parallelStart(mode="multicore", cpus = 4)
+tune.lrn = makeTuneWrapper(learner = spam.lrn,
+                           resampling = spam.resamp, # inner resampling loop
+                           par.set = spam.ps, # parameters to test
+                           control = spam.ctrl, # control
+                           measures = auc,
+                           show.info = FALSE)
+# unbiased test outer cross validation
+outer = makeResampleDesc("CV", iters = 3, stratify = TRUE)
+r = resample(tune.lrn, 
+             spam.tsk, 
+             resampling = outer, 
+             extract = getTuneResult,
+             measures = auc,
+             show.info = FALSE)
+parallelStop()
+getNestedTuneResultsX(r)
+data <- generateHyperParsEffectData(r, partial.dep = TRUE)
+plotHyperParsEffect(data[[1]], x = "iteration", y = "auc.test.mean",
+                    plot.type = "line", partial.dep.learn = "regr.randomForest")
+```
+
+```{r nbayes_get_data, echo=FALSE, include=FALSE, eval=FALSE}
+# RSpamData not available in R 3.4.3
+spamPath <- "Data"
+dirNames <- list.files(path = spamPath, full.names = TRUE)
+fileNames <- list.files(dirNames[1], full.names = TRUE)
+sapply(dirNames, function(x) length(list.files(x)))
+# pick random emails
+idx = c(1:5, 15, 27, 68, 69, 329, 404, 427, 516, 852, 971)
+#sampleEmail = sapply(list.files(dirNames[1], full.names = TRUE)[idx], readLines)
+# split into header and body
+splitMessage <- function(msg) {
+  splitPoint = match("", msg) # find first blank line
+  header = msg[1:(splitPoint-1)] # get header, will use this for attachments
+  body = msg[ -(1:splitPoint) ] # get body
+  return(list(header = header, body = body))
+}
+sampleSplit <- lapply(sampleEmail, splitMessage)
+# get headers
+headerList = lapply(sampleSplit, function(msg) msg$header)
+# get boundary id from multi-part email
+getBoundary<- function(header) {
+  boundaryIdx = grep("boundary=", header) # index boundary
+  boundary = gsub('"', "", header[boundaryIdx]) # replace quotes
+  gsub(".*boundary= *([^;]*);?.*", "\\1", boundary) # regexrepl with first group match
+}
+# pass boundary and body of each message
+dropAttach = function(body, boundary){
+  bString = paste("--", boundary, sep = "") 
+  bStringLocs = which(bString == body)# find start locs for each section of body
+  # -- is arbitrary
+  
+  if (length(bStringLocs) <= 1) return(body) # if no boundaries, give me back body
+  
+  eString = paste("--", boundary, "--", sep = "") # ending boundary string
+  eStringLoc = which(eString == body) # ending string loc
+  if (length(eStringLoc) == 0)  # if no ending string return first part of body
+    return(body[ (bStringLocs[1] + 1) : (bStringLocs[2] - 1)])
+  
+  # otherwise get length of body
+  n = length(body)
+  # if ending boundary string < rows, return body + ending rows after ending boundary
+  if (eStringLoc < n) 
+     return( body[ c( (bStringLocs[1] + 1) : (bStringLocs[2] - 1), 
+                    ( (eStringLoc + 1) : n )) ] )
+  
+  # finally, return body if no other conditions met
+  return( body[ (bStringLocs[1] + 1) : (bStringLocs[2] - 1) ])
+}
+# clean up punctuation, numbers, spaces
+cleanText =
+function(msg)   {
+  tolower(gsub("[[:punct:]0-9[:space:][:blank:]]+", " ", msg))
+}
+findMsgWords = 
+function(msg, stopWords) {
+ if(is.null(msg))
+  return(character())
+  # split and return vector of cleaned words
+ words = unique(unlist(strsplit(cleanText(msg), "[[:blank:]\t]+")))
+ 
+ # drop empty and 1 letter words
+ words = words[ nchar(words) > 1]
+ words = words[ !( words %in% stopWords) ]
+ invisible(words)
+}
+processAllWords = function(dirName, stopWords)
+{
+  # read all files in a given directory
+  fileNames = list.files(dirName, full.names = TRUE)
+  # drop files that are not email
+  notEmail = grep("cmds$", fileNames)
+  
+  if ( length(notEmail) > 0) fileNames = fileNames[ - notEmail ]
+  # read all messages into a list
+  messages = lapply(fileNames, readLines, encoding = "latin1")
+  
+  # split header and body for each message
+  emailSplit = lapply(messages, splitMessage)
+  # put body and header in own lists
+  bodyList = lapply(emailSplit, function(msg) msg$body)
+  headerList = lapply(emailSplit, function(msg) msg$header)
+  # save some memory, kill emailSplit var
+  rm(emailSplit)
+  
+  # determine which messages have attachments
+  hasAttach = sapply(headerList, function(header) {
+    CTloc = grep("Content-Type", header)
+    if (length(CTloc) == 0) return(0)
+    multi = grep("multi", tolower(header[CTloc])) 
+    if (length(multi) == 0) return(0)
+    multi # has attachment
+  })
+  
+  # get indices for which messages have attachments
+  hasAttach = which(hasAttach > 0)
+  
+  # find boundary strings for messages with attachments
+  boundaries = sapply(headerList[hasAttach], getBoundary)
+  
+  # drop attachments from message bodies
+  bodyList[hasAttach] = mapply(dropAttach, bodyList[hasAttach], 
+                               boundaries, SIMPLIFY = FALSE)
+  
+  # extract words from body
+  msgWordsList = lapply(bodyList, findMsgWords, stopWords)
+  
+  invisible(msgWordsList)
+}
+msgWordsList = lapply(dirNames, processAllWords, stopWords=stopWords)
+numMsgs = sapply(msgWordsList, length)
+# identify which messages are spam based on num Msgs
+isSpam = rep(c(FALSE, FALSE, FALSE, TRUE, TRUE), numMsgs)
+# list of vectors of cleaned words for each message
+msgWordsList = unlist(msgWordsList, recursive = FALSE)
+```
+
+``` {r nbayes_train_test_split, echo=FALSE, include=FALSE, eval=FALSE}
+set.seed(418910)
+numEmail = length(isSpam)
+numSpam = sum(isSpam)
+numHam = numEmail - numSpam
+# take 1/3 of data for testing from each class spam ham
+testSpamIdx = sample(numSpam, size =floor(numSpam/3))
+testHamIdx = sample(numHam, size=floor(numHam/3))
+# get word vectors from msgWordsList
+# test
+testMsgWords = c((msgWordsList[isSpam])[testSpamIdx],
+                 (msgWordsList[!isSpam])[testHamIdx])
+# train
+trainMsgWords = c((msgWordsList[isSpam])[-testSpamIdx],
+                 (msgWordsList[!isSpam])[-testHamIdx])
+# get labels for train and test
+testIsSpam = rep(c(TRUE, FALSE), 
+                 c(length(testSpamIdx), length(testHamIdx)))
+trainIsSpam = rep(c(TRUE, FALSE), 
+                 c(numSpam - length(testSpamIdx), 
+                   numHam - length(testHamIdx)))
+```
+
+```{r nbayes_freq_table, echo=FALSE, include=FALSE, eval=FALSE}
+computeFreqs <- function(wordsList, spam, bow = unique(unlist(wordsList))) {
+   # create a matrix for spam, ham, and log odds
+  wordTable = matrix(0.5, nrow = 4, ncol = length(bow), # default value is 0.5
+                     dimnames = list(c("spam", "ham",  # name dimensions
+                                        "presentLogOdds", 
+                                        "absentLogOdds"),  bow))
+  # build frequency table 
+  # For each spam message, add 1 to counts for words in message
+  counts.spam = table(unlist(lapply(wordsList[spam], unique)))
+  wordTable["spam", names(counts.spam)] = counts.spam + .5
+   # Similarly for ham messages
+  counts.ham = table(unlist(lapply(wordsList[!spam], unique)))  
+  wordTable["ham", names(counts.ham)] = counts.ham + .5  
+   # Find the total number of spam and ham
+  numSpam = sum(spam) # from T/F vector passed to func
+  numHam = length(spam) - numSpam
+  # Prob(word|spam) and Prob(word | ham)
+  # compute probabilities for each word given spam or ham
+  wordTable["spam", ] = wordTable["spam", ]/(numSpam + .5)
+  wordTable["ham", ] = wordTable["ham", ]/(numHam + .5)
+  
+   # calculate log odds
+  # log odds of presence
+  wordTable["presentLogOdds", ] = 
+     log(wordTable["spam",]) - log(wordTable["ham", ])
+  # log odds of absence
+  wordTable["absentLogOdds", ] = 
+     log((1 - wordTable["spam", ])) - log((1 -wordTable["ham", ]))
+  invisible(wordTable)
+}
+```
+
+```{r nbayes_classify, echo=FALSE, include=FALSE, eval=FALSE}
+# use our frequency and odds table to classify new messages
+computeMsgLLR = function(words, freqTable) 
+{
+       # Discards words not in training data.
+  words = words[!is.na(match(words, colnames(freqTable)))]
+       # Find which words are present
+  present = colnames(freqTable) %in% words
+  sum(freqTable["presentLogOdds", present]) +
+    sum(freqTable["absentLogOdds", !present])
+}
+testLLR = sapply(testMsgWords, computeMsgLLR, trainTable)
+tapply(testLLR, testIsSpam, summary)
+pdf("SP_Boxplot.pdf", width = 6, height = 6)
+spamLab = c("ham", "spam")[1 + testIsSpam]
+boxplot(testLLR ~ spamLab, ylab = "Log Likelihood Ratio",
+      #  main = "Log Likelihood Ratio for Randomly Chosen Test Messages",
+        ylim=c(-500, 500))
+dev.off()
+typeIErrorRate = 
+function(tau, llrVals, spam)
+{
+  classify = llrVals > tau
+  sum(classify & !spam)/sum(!spam)
+}
+typeIErrorRate(0, testLLR,testIsSpam)
+typeIErrorRate(-20, testLLR,testIsSpam)
+typeIErrorRates = 
+function(llrVals, isSpam) 
+{
+  o = order(llrVals)
+  llrVals =  llrVals[o]
+  isSpam = isSpam[o]
+  idx = which(!isSpam)
+  N = length(idx)
+  list(error = (N:1)/N, values = llrVals[idx])
+}
+typeIIErrorRates = function(llrVals, isSpam) {
+    
+  o = order(llrVals)
+  llrVals =  llrVals[o]
+  isSpam = isSpam[o]
+    
+    
+  idx = which(isSpam)
+  N = length(idx)
+  list(error = (1:(N))/N, values = llrVals[idx])
+  }  
+xI = typeIErrorRates(testLLR, testIsSpam)
+xII = typeIIErrorRates(testLLR, testIsSpam)
+tau01 = round(min(xI$values[xI$error <= 0.01]))
+t2 = max(xII$error[ xII$values < tau01 ])
+pdf("LinePlotTypeI+IIErrors.pdf", width = 8, height = 6)
+library(RColorBrewer)
+cols = brewer.pal(9, "Set1")[c(3, 4, 5)]
+plot(xII$error ~ xII$values,  type = "l", col = cols[1], lwd = 3,
+     xlim = c(-300, 250), ylim = c(0, 1),
+     xlab = "Log Likelihood Ratio Values", ylab="Error Rate")
+points(xI$error ~ xI$values, type = "l", col = cols[2], lwd = 3)
+legend(x = 50, y = 0.4, fill = c(cols[2], cols[1]),
+       legend = c("Classify Ham as Spam", 
+                  "Classify Spam as Ham"), cex = 0.8,
+       bty = "n")
+abline(h=0.01, col ="grey", lwd = 3, lty = 2)
+text(-250, 0.05, pos = 4, "Type I Error = 0.01", col = cols[2])
+mtext(tau01, side = 1, line = 0.5, at = tau01, col = cols[3])
+segments(x0 = tau01, y0 = -.50, x1 = tau01, y1 = t2, 
+         lwd = 2, col = "grey")
+text(tau01 + 20, 0.05, pos = 4,
+     paste("Type II Error = ", round(t2, digits = 2)), 
+     col = cols[1])
+dev.off()
+k = 5
+numTrain = length(trainMsgWords)
+partK = sample(numTrain)
+tot = k * floor(numTrain/k)
+partK = matrix(partK[1:tot], ncol = k)
+testFoldOdds = NULL
+for (i in 1:k) {
+  foldIdx = partK[ , i]
+  trainTabFold = computeFreqs(trainMsgWords[-foldIdx], trainIsSpam[-foldIdx])
+  testFoldOdds = c(testFoldOdds, 
+               sapply(trainMsgWords[ foldIdx ], computeMsgLLR, trainTabFold))
+}
+testFoldSpam = NULL
+for (i in 1:k) {
+  foldIdx = partK[ , i]
+  testFoldSpam = c(testFoldSpam, trainIsSpam[foldIdx])
+}
+xFoldI = typeIErrorRates(testFoldOdds, testFoldSpam)
+xFoldII = typeIIErrorRates(testFoldOdds, testFoldSpam)
+tauFoldI = round(min(xFoldI$values[xFoldI$error <= 0.01]))
+tFold2 = xFoldII$error[ xFoldII$values < tauFoldI ]
+```
