@@ -37,6 +37,9 @@ library(GGally)
 library(ltm)
 library(rpart.plot)
 library(knitr)
+library(plotmo)
+library(mmpf)
+library(emoa)
 ```
 # Introduction
 
@@ -49,6 +52,10 @@ The simplest forms of filters are list-based filters which as the name implies, 
 
 ```{r, load data}
 load("data.Rda") 
+#load("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/resampling_binary")
+#load('/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/spam.tuned.clf'
+load("/Users/chandlervaughn/Dropbox/4. Chandler/Development/git_repositories/MS7333_QTW/Case5/resampling_binary")
+load('/Users/chandlervaughn/Dropbox/4. Chandler/Development/git_repositories/MS7333_QTW/Case5/spam.tuned.clf')
 ls()
 ```
 The data consists of 9348 observations. Each observation represents one email message with up to 30 variables. The first variable, "isSpam" is a 2 level categorical variable that denotes whether the message was known to be spam. This will serve as the response variable for the study. The remaining variables consist of 16 categorical and 13 numeric variables that repesent characteristics of the email such such as "isRe" which denotes if an email contains the "RE" prefix in the subject line, "hour" which denotes the hour of the day in which the email was received, "bodyCharCt" which represents the number of characters in the body of the message, and "perCaps" which represents the percent of characters that where capitalized.    
@@ -83,8 +90,8 @@ sapply(emailDFrp, function(x) sum(is.na(x)))
 
 Though dropping the missing values was an option, for this study we decided to impute the missing values based on random forest classification and regesssion using a parallel method. 
 
-```{r parallel}
-registerDoParallel(cores=4)
+```{r parallel, cache=True}
+registerDoParallel(cores=10)
 
 df <- missForest(emailDFrp, 
                  maxiter=5, 
@@ -421,10 +428,10 @@ rpart.plot(splits, type=3, clip.right.labs=FALSE, branch=.3)
 rpart.rules(splits, extra = 4, clip.facs = TRUE)
 
 
-library(plotmo)
+
 plotmo(splits, type = "prob", nresponse = "Spam")
 
-plotmo(splits, type = "prob", nresponse = "Spam", type2 = "image", ngrid2 = 200, pt.col = ifelse(kyphosis$Kyphosis == "present", "red", "lightblue"))
+plotmo(splits, type = "prob", nresponse = "Spam", type2 = "image", ngrid2 = 200)
 ```
 
 We can see from the decision tree above that we are using bodyCharCt multiple times in the splitting process for the training data. Additionally, we can see there is a bit of misclassification particularly as you go down the tree. Particularly in the sense of when we incorrectly classify spam emails as valid. 
@@ -467,7 +474,7 @@ spam.resamp = makeResampleDesc(method = "CV",
 # pull out resampling instance for reproducibility
 #spam.resamp.bin = makeResampleInstance(spam.resamp, task=spam.tsk)
 #save(spam.resamp.bin, file ="resampling_binary") # save for future use!
-load("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/resampling_binary")
+
 # identify search grid params - we'll brute force here based on reasonable param vals
 # can also random search over numeric ranges instead
 spam.ps = makeParamSet(
@@ -491,7 +498,7 @@ spam.ps = makeParamSet(
 #parallelStop()
 # save tuned classifier to binary
 #save(spam.tuned.clf, file='spam.tuned.clf')
-load('/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/spam.tuned.clf')
+
 # create cleaned hyperparameter effect data from tuning
 data <- generateHyperParsEffectData(spam.tuned.clf, 
                                     partial.dep = TRUE)
@@ -536,7 +543,7 @@ We can n see the complexity parameter's dominance in the figure below. The highe
 ```{r cp_vs_minsplit, echo=FALSE, include=TRUE, fig.height=10, fig.width=8.5}
 # plot hyper parameter effects
 # this is a partial dependence plot showing performance based on two features
-library(mmpf)
+
 plotHyperParsEffect(data, x = "cp", y = "minsplit", z = "auc.test.mean",
   plot.type = "heatmap", partial.dep.learn = "regr.randomForest")+
   ggtitle("Figure 11: Hyperparameter Effects - Complexity and Minsplit")+
@@ -576,7 +583,7 @@ spam.resamp = makeResampleDesc(method = "CV",
 # pull out resampling instance for reproducibility
 #spam.resamp.bin = makeResampleInstance(spam.resamp, task=spam.tsk)
 #save(spam.resamp.bin, file ="resampling_binary") # save for future use!
-load("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/resampling_binary")
+
 # identify search grid params - we'll brute force here based on reasonable param vals
 
 spam.tsk = makeClassifTask(id = "spam", 
@@ -612,7 +619,7 @@ parallelStart(mode="multicore", cpus=4)
 parallelStop()
 # save tuned classifier to binary
 #save(spam.tuned.clf, file='spam.tuned.clf')
-load('/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials/spam.tuned.clf')
+
 # create cleaned hyperparameter effect data from tuning
 data2 <- generateHyperParsEffectData(spam.tuned.clf2, 
                                     partial.dep = TRUE)
@@ -682,7 +689,7 @@ ggplot(dat, aes(reorder(vars, importance, sum), importance))+
     ylab("Importance Value")
 
 ```
-Reviewing the Otpimized rpart Feature Importance, we can see that along with the perCaps adn the bodyCharCt, one of the emerging leaders with feature importance is the number of forwards in an email in detirming whether it is valid or spam. Reviewing the decision tree plot above, we can see that if the number of forwards exceeds 6 times, then an email has been valid in previous instances. 
+Reviewing the optimized rpart Feature Importance, we can see that along with the perCaps and the bodyCharCt, one of the emerging leaders with feature importance is the number of forwards in an email for determining whether an email is valid or spam. Reviewing the decision tree plot above, we can see that if the number of forwards exceeds 6 times, then an email has been valid in previous instances. 
 
 ```{r, echo=FALSE, include =FALSE, eval=FALSE}
 plotHyperParsEffect(data, x = "minsplit", y = "maxdepth", z = "auc.test.mean",
@@ -705,7 +712,7 @@ plotThreshVsPerf(thresh_plot)+
 # this block is exploration of the mlr package in R
 # optimize both fnr and fpr
 spam.ctrl = makeTuneMultiCritControlGrid()
-library(emoa)
+
 spam.tuned.clf = tuneParamsMultiCrit( learner = spam.lrn, 
                                       task = spam.tsk, 
                                       resampling = spam.resamp.bin, # compare to same resampling method!
