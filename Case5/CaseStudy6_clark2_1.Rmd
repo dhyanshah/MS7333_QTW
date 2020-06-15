@@ -43,9 +43,10 @@ library(emoa)
 ```
 # Introduction
 
-According to the anti malware company Malwarebytes, "Spam is any kind of unwanted, unsolicited digital communication, often an email, that gets sent out in bulk. Spam is a huge waste of time and resources." At its most benign, spam is the digital equivalent of junk mail costing receipents nothing more than time and aggravation. However, spam emails can expose individuals and companies to a litany of attacks including phishing, ransomware, and most recently cryptojacking. These cyber attacks can result in significant costs to companies in the form of lost time, revenue, resources, and intelectual property. Without a good spam filter even the most sophisticated layered cyber defense system is vulnerable to a cyber attack that originates from malicious email carelessly opened by a trusting employee. For this reason spam filters are just as important to cyber security as firewalls . 
+According to the anti-malware company Malwarebytes, "Spam is any kind of unwanted, unsolicited digital communication, often an email, that gets sent out in bulk. Spam is a huge waste of time and resources." At its most benign, spam is the digital equivalent of junk mail costing recipients nothing more than time and aggravation. However, spam emails can expose individuals and companies to a litany of attacks including phishing, ransomware, and most recently crypto-jacking. These cyber-attacks can result in significant costs to companies in the form of lost time, revenue, resources, and intellectual property. Without a good spam filter even the most sophisticated layered cyber defense system is vulnerable to a cyber-attack that originates from malicious email carelessly opened by a trusting employee. For this reason spam filters are just as important to cybersecurity as firewalls . 
 
-The simplest forms of filters are list-based filters which as the name implies, take lists of words from a combination of black lists, grey lists, and white lists and compares the words in an email to its list, to determine if the email should be blocked, flagged, or allowed. These filters require continous list updates and result in both high false positve and false negative designations. A more effective filter is the heuristic filter that makes use of statistical methods and machine learning algorithms to determine the probablity that an individual email is spam. In this study we will create a decision tree based spam filter and compare it to a naive bayes based filter to determine the accuracy and precision of each.  
+The simplest forms of filters are list-based filters which as the name implies, take lists of words from a combination of black lists, grey lists, and white lists and compares the words in an email to its list, to determine if the email should be blocked, flagged, or allowed. These filters require continuous list updates and result in both high false positive and false negative designations. A more effective filter is the heuristic filter that makes use of statistical methods and machine learning algorithms to determine the probability that an individual email is spam. In this study we will create a decision tree-based spam filter and compare it to a naive bayes based filter to determine the accuracy and precision of each.  
+ 
 
 
 # Data
@@ -58,13 +59,13 @@ load("/Users/chandlervaughn/Dropbox/4. Chandler/Development/git_repositories/MS7
 load('/Users/chandlervaughn/Dropbox/4. Chandler/Development/git_repositories/MS7333_QTW/Case5/spam.tuned.clf')
 ls()
 ```
-The data consists of 9348 observations. Each observation represents one email message with up to 30 variables. The first variable, "isSpam" is a 2 level categorical variable that denotes whether the message was known to be spam. This will serve as the response variable for the study. The remaining variables consist of 16 categorical and 13 numeric variables that repesent characteristics of the email such such as "isRe" which denotes if an email contains the "RE" prefix in the subject line, "hour" which denotes the hour of the day in which the email was received, "bodyCharCt" which represents the number of characters in the body of the message, and "perCaps" which represents the percent of characters that where capitalized.    
+The data consists of 9348 observations. Each observation represents one email message with up to 30 variables. The first variable, "isSpam" is a 2 level categorical variable that denotes whether the message was known to be spam. This will serve as the response variable for the study. The remaining variables consist of 16 categorical and 13 numeric variables that represent characteristics of the email such as "isRe" which denotes if an email contains the "RE" prefix in the subject line, "hour" which denotes the hour of the day in which the email was received, "bodyCharCt" which represents the number of characters in the body of the message, and "perCaps" which represents the percent of characters that where capitalized.   
 
 ```{r, Pre-EDA Structure}
 str(emailDFrp)
 ```
 
-For better interpretation we renamed and releveled the resonse varaible from "T" and "F" to "Spam" and "valid". 
+For better interpretation we renamed and releveled the response variable from "T" and "F" to "Spam" and "Valid". 
 
 ```{r spampat}
 emailDFrp$isSpam <- emailDFrp$isSpam %>% 
@@ -88,7 +89,7 @@ This indicates that up to 3.9% of our observations could have missing values.
 sapply(emailDFrp, function(x) sum(is.na(x)))
 ```
 
-Though dropping the missing values was an option, for this study we decided to impute the missing values based on random forest classification and regesssion using a parallel method. 
+Though dropping the missing values was an option, for this study we decided to impute the missing values based on random forest classification and regression using a parallel method. 
 
 ```{r parallel, cache=True}
 registerDoParallel(cores=10)
@@ -111,7 +112,7 @@ sum(is.na(emailDFrp))
 
 # Exploratory Data Analysis
 
-After ensuring that no missing values existed in the data set we began our exploratory data analysis by examining the distribution of the response variable.
+After ensuring that no missing values existed in the dataset, we began our exploratory data analysis by examining the distribution of the response variable.
 
 ```{r imputation, include=TRUE, echo=FALSE}
 # get dataset balance, show via barchart
@@ -128,9 +129,10 @@ emailDFrp %>%
       theme(text=element_text(size=12))
 ```
 
-The chart above shows that we have an unbalanced dataset with nearly 2,400 spam emails compared to nearly 7,000 nonspam emails (valid) emails. This means that, roughly, 1 out of every 4 emails in our set are considered spam. This fact highlights the possible need to account for the imbalance in our future modeling, and ensure that we are tuning and training our models such that they are not being rewarded for leaning too much on assigning the valid class to new valid. That said, since the unbalance isn't huge, we will not need to apply oversampling mehtods to address this issue. 
+The chart above shows that we have an unbalanced dataset with nearly 2,400 spam emails compared to nearly 7,000 nonspam emails (valid) emails. This means that, roughly, 1 out of every 4 emails in our set are considered spam. This fact highlights the possible need to account for the imbalance in our future modeling and ensure that we are tuning and training our models such that they are not being rewarded for leaning too much on assigning the valid class to new valid. That said, since the unbalance isn't huge, we will not need to apply oversampling methods to address this issue. 
 
-A quick review of the numeric variables indicates that there is a great degree of varaition both within and between the individual variables. This indicates that normalization or standardization might be necessary. 
+A quick review of the numeric variables indicates that there is a great degree of variation both within and between the individual variables. This indicates that normalization or standardization might be necessary.
+
 
 ```{r, EDA summary}
 summary(emailDFrp[,18:30])
@@ -138,7 +140,7 @@ summary(emailDFrp[,18:30])
 
 #### Explanatory Variable Relationships
 
-With Regards to our imputed dataset, the correlation matrix shows that slight positive and negative correlations exist between our numeric predictors, with the only strong (.92) multicolinear relationship being between "bodyCharCt" and "numLines". 
+With Regards to our imputed dataset, the correlation matrix shows that slight positive and negative correlations exist between our numeric predictors, with the only strong (.92) multicollinear relationship being between "bodyCharCt" and "numLines".
 
 ```{r correlation plot, include = TRUE, cache=TRUE, echo=FALSE}
 
@@ -166,15 +168,15 @@ cormat %>% ggplot(aes(x=Var1, y=Var2, fill=value)) +
 
 ```
 
-Looking at the data, we can see three addtional positive relationships can be pointed out.
+Looking at the data, we can see three additional positive relationships can be pointed out.
 
 * perHTML and numLines (.3)
 * perHTML and bodyCahrCt (.38)
 * numDir and subQuesCt (.37)
 
-While not very high, the correlation of these predictors can potentially be overweighed in our modeling procedures, due to the fact that they might not be independent. For example, numLines and bodyCharct are both functions of the length of the email in question, so they are very similar metrics. However, if we use recursive partitioning in our modeling, the collinearity between these pairs of variables will be accounted for, by selecting the most important variable if similar variables are found. 
+While not very high, the correlation of these predictors can potentially be overweighed in our modeling procedures, since they might not be independent. For example, numLines and bodyCharct are both functions of the length of the email in question, so they are very similar metrics. However, if we use recursive partitioning in our modeling, the collinearity between these pairs of variables will be accounted for, by selecting the most important variable if similar variables are found. 
 
-Looking at the non-numerical values in our dataset, we can see that we have 16 boolean values that we can factor our model into as well. To do so, we will employ the Fisher's exact p-test to show the resulting p-values for our dichotomous variables, which we will use as a numerical comparison similar to how we used correlation on our numerical variables. 
+Looking at the non-numerical values in our dataset, we can see that we have 16 boolean values that we can factor our model into as well. To do so, we will employ the Fisher's exact p-test to show the resulting p-values for our dichotomous variables, which we will use as a numerical comparison like how we used correlation on our numerical variables.
 
 ```{r fisher's test, include=TRUE, cache=TRUE, echo=FALSE}
 
@@ -209,9 +211,10 @@ fishers %>%
         ggtitle("Figure 3: Fisher's Exact Test for Boolean Predictor Variables")
 ```
 
-The lower p values indicate that we reject the null of a randomized assocation between dichotomous variables. Here we can see that there are some large non random dependencies for variables such as isWrote which indicate whether an email is electronically scribed. Since this is apparent in almost all instances, we can likely remove. HOwever, there are some instances for variables such as priority and noHost which may be interesting for classifying spam or not spam. This would make sense as the lack of host name and sender are variables written by the email sender.
+The lower p values indicate that we reject the null of a randomized association between dichotomous variables. Here we can see that there are some large non random dependencies for variables such as isWrote which indicate whether an email is electronically scribed. Since this is apparent in almost all instances, we can likely remove. However, there are some instances for variables such as priority and noHost which may be interesting for classifying spam or not spam. This would make sense as the lack of host name and sender are variables written by the email sender.
 
-We can also visually review the correlation between factors and continuous variables using a biserial correlation (as we have dichotomous factors for all of our non-continuous variables). Upon review, we can see some relationships emerge. 
+We can also visually review the correlation between factors and continuous variables using a biserial correlation (as we have dichotomous factors for all our non-continuous variables). Upon review, we can see some relationships emerge.
+
 
 ```{r biser_cor, include=TRUE, echo=FALSE, cache=TRUE, fig.height=7, fig.width=8.5}
 # we use biserial correlation in order to get a more accurate picture of factor v continous relationships
@@ -243,13 +246,15 @@ df %>%
 
 Reviewing the plot further, we can see that the number of attachments (numAtt) has a negative correlation with the boolean value of multipartText. Multipart text messages typically do not typically have attachments. In addition, we are seeing that the variable for number of forwards has a negative correlation to isInReplyTo, which suggests that the replies do not typically have a ton of forwards. 
 
-Overall, we will look into ways that continuous and factor variables can be used to predict the variable isSpam while also pulling out the variable importances int he rpart package. 
+Overall, we will look into ways that continuous and factor variables can be used to predict the variable isSpam while also pulling out the variable importance in the rpart package.
+
 
 #### Response Variable Relationships
 
-As we mentioned before, the majority of our instances in our dataset are not considered spam. That said, we can visualize the relationships between spam and valid emails for the factor and continuous predictor variables using different plotting techniques. 
+As we mentioned before, most of our instances in our dataset are not considered spam. That said, we can visualize the relationships between spam and valid emails for the factor and continuous predictor variables using different plotting techniques. 
 
-First, we will look forther into isRe, numEnd, subSpamWords and isWrote. The variable numEnd indicates whether or not the 'from' email prefix ends with a number, such as 'clark.daniel424@gmail.com.'
+First, we will look further into isRe, numEnd, subSpamWords and isWrote. The variable numEnd indicates whether or not the 'from' email prefix ends with a number, such as 'clark.daniel424@gmail.com.'
+
 
 ```{r bool_impact, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
 # which factor variables are worth splitting?
@@ -273,9 +278,10 @@ emailDFrp[, c(1,which(bools)+1)] %>%
     scale_x_discrete("Is Spam - True or False")
 ```
 
-In the chart above, subSpamWords is a boolean that indicates when a known "spam word" is indicated in the subject of an email, such as "viagra" which would trigger a value for subSpamwords. The majority of our spam cases happen when our factors are set to false. Additionally, the mostly valid emails are related to instances when isRe and isWrote are set to true. This will prove to be usefil when seeing how a decision tree can be split between our categorical variables in the decision function to detirmine if an email is spam or not spam. 
+In the chart above, subSpamWords is a boolean that indicates when a known "spam word" is indicated in the subject of an email, such as "viagra" which would trigger a value for subSpamwords. Most of our spam cases happen when our factors are set to false. Additionally, the mostly valid emails are related to instances when isRe and isWrote are set to true. This will prove to be useful when seeing how a decision tree can be split between our categorical variables in the decision function to determine if an email is spam or not spam. 
 
-We will also look into the separation of classes for numeric variables by looking at the log values for our numeric placements in a box plots. We will review some of the interesting numerics in the figure below. 
+We will also look into the separation of classes for numeric variables by looking at the log values for our numeric placements in a box plots. We will review some of the interesting values in the figure below.
+
 
 
 ```{r numeric_impact, include = TRUE, echo=FALSE, cache = TRUE, fig.width=8.5, fig.height=3}
@@ -299,19 +305,21 @@ emailDFrp[,c(1, nums)] %>%
       ylab("Log Value")
 ```
 
-The forwards predictor variable, shows a great concentration of value distribution for the third quartile of messages that are labeled as valid. The perCaps predictor variable shows a larger predictor interval for spam than valid emails. We can also see that the median value for spam is higher than the valid messages. On Per HTML, the mean and median value for valid emails is nearly zero while the range is much greater for the spam messages.
+The “forwards” predictor variable, shows a great concentration of value distribution for the third quartile of messages that are labeled as valid. The perCaps predictor variable shows a larger predictor interval for spam than valid emails. We can also see that the median value for spam is higher than the valid messages. On Per HTML, the mean and median value for valid emails is nearly zero while the range is much greater for the spam messages.
 
-Examination of these predictor variables indicates that we may have some leads to uncovering a predictor and an important features related to detecting spam. 
+Examination of these predictor variables indicates that we may have some leads to uncovering a predictor and an important feature related to detecting spam.
+
 
 # Modeling
 
 ### Variable Selection and Model Comparison Setup
 
-In hopes to avoid the complexity of variable selection algorithms to run an algorithm against our email data set, we will set up a fit of an rpart model using the training data an all 29 features and default model parameters. For the default parameters for rpart, we will use a minsplit of 20 along with a complexity parameter of 0.01 with a max depth of 30. The splitting criteria will use the default Gini Index. 
+In hopes to avoid the complexity of variable selection algorithms to run an algorithm against our email data set, we will set up a fit of a rpart model using the training data an all 29 features and default model parameters. For the default parameters for rpart, we will use a minsplit of 20 along with a complexity parameter of 0.01 with a max depth of 30. The splitting criteria will use the default Gini Index. 
 
-for our setup, we will use an 80/20 split between the training and testing set. Since we have an imbalanced relationship between spam emails and valid emails, we can use a stratified sampling of the observations in our training and testing data sets to ensure we maintain the original balance. We have 9,000 total observations, so this would mean that our testing set will have roughly 1,800 observations. 
+For our setup, we will use an 80/20 split between the training and testing set. Since we have an imbalanced relationship between spam emails and valid emails, we can use a stratified sampling of the observations in our training and testing data sets to ensure we maintain the original balance. We have 9,000 total observations, so this would mean that our testing set will have roughly 1,800 observations. 
 
-As we will run a series of models in our experiment, we will maintain this distribution of training and testing data for each model to ensure that we are running a valid experiment. As our rpart is trained, it will provide a listing of variables that are playing the greatest role in deciding upon valid or spam email. The chart below provides the most important features using the rpart base model. 
+As we will run a series of models in our experiment, we will maintain this distribution of training and testing data for each model to ensure that we are running a valid experiment. As our rpart is trained, it will provide a listing of variables that are playing the greatest role in deciding upon valid or spam email. The chart below provides the most important features using the rpart base model.
+
 
 ```{r fit_dtree_base, echo=FALSE, include=TRUE, fig.height=5, fig.width=8.5}
 # we fit the base rpart model in this block
@@ -364,22 +372,24 @@ ggplot(dat, aes(reorder(vars, importance, sum), importance))+
     xlab("Feature Splits")+
     ylab("Importance Value")
 ```
-Per the figure 7 above, we found that percaps is the most important feature in defining the spam messages using the rpart base model. perCaps  is the percentage of capital alpha characters in the body of the email. For this model, the importance is weighted  based on the sum of the impurity for each variable split. Secondly and thirdly, we can see that numLines and bodyCharCt hold the second and third most important variables in our model. 
+Per the figure 7 above, we found that percaps is the most important feature in defining the spam messages using the rpart base model. perCaps is the percentage of capital alpha characters in the body of the email. For this model, the importance is weighted based on the sum of the impurity for each variable split. Secondly and thirdly, we can see that numLines and bodyCharCt hold the second and third most important variables in our model. 
 
-We will also look into the rpart control parameters and thier ability to classify spam emails based on fitting a separate, optimized rpart model. To do this, we will look into 4 different parameters for tuning. Below, we outline the description of these. 
+We will also investigate the rpart control parameters and their ability to classify spam emails based on fitting a separate, optimized rpart model. To do this, we will investigate 4 different parameters for tuning. Below, we outline the description of these. 
 
 * Complexity parameter (cp) - A scaled complexity penalty that ranges from 0 to 1. cp is compared against the error rate related to the previous split. Any split that doesn't decrease the error rate is not considered. 
-* Minsplit - the minimum number of observations that need to exist in a node in order for the split to be attempted. 
+* Minsplit - the minimum number of observations that need to exist in a node for the split to be attempted. 
 * Maxdepth - The maximum depth of any node of the final tree, with the root node counted at depth 0.
 * Splitting criteria - or the gini or information. It utilizes the gini index to optimize split points and entropy and information gain. 
 
-We will use decision trees to ensure we are using these parameters in such a way that we don't overfit. 
+We will use decision trees to ensure we are using these parameters in such a way that we don't overfit.
+
 
 #### Hyperparameter Optimization
 
-We will be exploring a discrete list of the four parameters of interest to help ensure we are running the models as quick and efficient as possible. A grid search procedure will be used in conjuction with a ten-fold cross-validation. 
+We will be exploring a discrete list of the four parameters of interest to help ensure we are running the models as quick and efficient as possible. A grid search procedure will be used in conjunction with a ten-fold cross-validation. 
 
-We are going to be using our 4 panel procedure for evaluating classification performance and maximize our true positive classification where "spam" is the positive class. We will measure this using an ROC (AUC) curve and detirmining which model provides us the greatest area under the curve. A false positive would mean that a valid email will be marked as spam. A false negative would mean that a spam message ends up in the important inbox. The latter two would mean that we have a model error. 
+We are going to be using our 4-panel procedure for evaluating classification performance and maximize our true positive classification where "spam" is the positive class. We will measure this using a ROC (AUC) curve and determining which model provides us the greatest area under the curve. A false positive would mean that a valid email will be marked as spam. A false negative would mean that a spam message ends up in the important inbox. The latter two would mean that we have a model error.
+
 
 # Results
 
@@ -416,9 +426,10 @@ g+
         text=element_text(size=12))+     
   guides(shape = guide_legend(override.aes = list(size = 3)))
 ```
-The plot above provides a log scale visualization of the classificaiton regions. The observations in white are misclassifications while hte color boundaries represents the outcomes for the spam email. The lighter shades of blue and pink represent the lower probabilities for the perCaps and bodyCharCt classes. As we can see, using only two features in our model, we are going to see a lot of false positivs as indicated by the number of circles in the blue section. To improve upon this, we will need to include more varlaubes to increase performance, however, these two show to be a good starting point. 
+The plot above provides a log scale visualization of the classification regions. The observations in white are misclassifications while the color boundaries represent the outcomes for the spam email. The lighter shades of blue and pink represent the lower probabilities for the perCaps and bodyCharCt classes. As we can see, using only two features in our model, we are going to see a lot of false positives as indicated by the number of circles in the blue section. To improve upon this, we will need to include more variables to increase performance, however, these two shows to be a good starting point. 
 
-From here, we will use rpart to build a decision tree with 14 splits as represented below. We will start with the default decision treeas discussed in the previous section, and fit it with the training data set. 
+From here, we will use rpart to build a decision tree with 14 splits as represented below. We will start with the default decision treeas discussed in the previous section and fit it with the training data set.
+
 
 ```{r tree_plot, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
 # print a pretty tree plot of our base rpart model
@@ -436,7 +447,8 @@ plotmo(splits, type = "prob", nresponse = "Spam", type2 = "image", ngrid2 = 200)
 
 We can see from the decision tree above that we are using bodyCharCt multiple times in the splitting process for the training data. Additionally, we can see there is a bit of misclassification particularly as you go down the tree. Particularly in the sense of when we incorrectly classify spam emails as valid. 
 
-We will now leverage the test data to produce a confusion matrix to detirmine the model performance in the table below. As mentioned previously, we will be reviewing false positive rate, false negative rate, MMCE (model misclassification error) and ROC AUC.
+We will now leverage the test data to produce a confusion matrix to determine the model performance in the table below. As mentioned previously, we will be reviewing false positive rate, false negative rate, MMCE (model misclassification error) and ROC AUC.
+
 
 
 ```{r confusion_base, echo=FALSE, include=TRUE}
@@ -451,18 +463,19 @@ performance(spam.preds, measures=list(auc, mmce, fpr, fnr))
 ```
 
 
-So we can have a general error and correction rate, we will be using MMCE and AUC as our KPIs on performance, as they generally indicate how well we are correctly classifiying spam and valid emails. As a diagnostic measure, we will be looking at FPR and FNR to keep our models honest. Looking at our confusion matrix above, we can see that while we do generally well in AUC, we generally struggle with false negative rates. This means that we are misclassifying 91 spam observations out of the 479 in our training set for a false negative rate of nearly 19%. MMCE is also not particularly good at 9%. Our aim moving forward will be to improve using rpart's hyperparameters. 
+In order that we can have a general error and correction rate, we will be using MMCE and AUC as our KPIs on performance, as they generally indicate how well we are correctly classifying spam and valid emails. As a diagnostic measure, we will be looking at FPR and FNR to keep our models honest. Looking at our confusion matrix above, we can see that while we do generally well in AUC, we generally struggle with false negative rates. This means that we are misclassifying 91 spam observations out of the 479 in our training set for a false negative rate of nearly 19%. MMCE is also not particularly good at 9%. Our aim moving forward will be to improve using rpart's hyperparameters.
 
 
 #### Hyperparameter Tuning
 
-To help improve our MMCE and FNR, we will be looking at making adjustments to our complexity parameter, minimum split, maximum depth and the splitting criterion. To avoid running the model over and over again and to lighten the code usage, we will be using a grid search procedure to test the Rpart on various tuning combinations of our parameters. Below is a list of our parameters we will be exploring. 
+To help improve our MMCE and FNR, we will be looking at adjusting our complexity parameter, minimum split, maximum depth and the splitting criterion. To avoid running the model repeatedly and to lighten the code usage, we will be using a grid search procedure to test the Rpart on various tuning combinations of our parameters. Below is a list of our parameters we will be exploring. 
 
 Parameter Search Criteria
 *complexity parameter (cp) -0.001, 0.01, 0.1, 0.2, 0.5,
 *minsplit - 1, 5, 10, 15, 20, 30
 *maxdepth - 1, 5, 10, 15, 20, 30
 *splitting criterion - gini, information
+
 
 ```{r rpart_optimize, echo=FALSE, cache=TRUE, include=FALSE}
 # Leaving commented code to show setup of resampling method
@@ -527,19 +540,20 @@ plotHyperParsEffect(data, x = "iteration", y = "auc.test.mean",
         text=element_text(size=12))
 ```
 
-Our optimization procedure starts to max out at roughly 0.97 of an AUC using our training data, and our optimized tree is showing to be much larger than our base model. With our plot above, we can see that we are using 50 to 100 total splits in our optimized tree. This is due to the fact that our complexity penalty is lower than our optimized gridsearch threshold at (0.01). This may be causing an overfit to our test set.
+Our optimization procedure starts to max out at roughly 0.97 of an AUC using our training data, and our optimized tree is showing to be much larger than our base model. With our plot above, we can see that we are using 50 to 100 total splits in our optimized tree. This is since our complexity penalty is lower than our optimized gridsearch threshold at (0.01). This may be causing an overfit to our test set.
 
 ```{r tune_tree_plot, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
 # get the actual rpart model
 splits <- getLearnerModel(spam.opt.clf)
 prp(splits, 0, extra=1, roundint=FALSE)
 
-rpart.plot(splits)
+rpart.plot(splits, roundint=FALSE)
 ```
 
-Our resulting model we ran generated a AUC score of greater than 0.96 with a complexity of 0.001. Additionally, the maxdepth for the decision tree nod is always 10 or higher. About half of our models use the information splitting criterion and the majority of the models use a minsplit of 10 or more. Overall, our optimizations lean towards greater splitting and a medium node depth.
+Our resulting model we ran generated an AUC score of greater than 0.96 with a complexity of 0.001. Additionally, the maxdepth for the decision tree nod is always 10 or higher. About half of our models use the information splitting criterion and most of the models use a minsplit of 10 or more. Overall, our optimizations lean towards greater splitting and a medium node depth.
 
 We can n see the complexity parameter's dominance in the figure below. The higher AUC is related to a lower CP (or complexity parameter).
+
 ```{r cp_vs_minsplit, echo=FALSE, include=TRUE, fig.height=10, fig.width=8.5}
 # plot hyper parameter effects
 # this is a partial dependence plot showing performance based on two features
@@ -548,6 +562,7 @@ plotHyperParsEffect(data, x = "cp", y = "minsplit", z = "auc.test.mean",
   plot.type = "heatmap", partial.dep.learn = "regr.randomForest")+
   ggtitle("Figure 11: Hyperparameter Effects - Complexity and Minsplit")+
   ylab("Mean AUC")+
+  xlab("Complexity")
   guides(fill=guide_legend(title="Mean AUC"))+
   theme(legend.position = "right", 
             legend.text=element_text(size=8),
@@ -555,7 +570,7 @@ plotHyperParsEffect(data, x = "cp", y = "minsplit", z = "auc.test.mean",
         axis.text.x = element_text(angle=90, vjust=0.5),
         text=element_text(size=14))
 ```
-After exploring the rpart tuning parameters during grid sarch, we significantly increased the AUC score on our optimized model to 0.966 from 0.934, as well as decreased our MMCE from 0.089 to 0.054. IN our base model, we ran into issues with a large true negative rate (classifying spam emails as legit), which was reduced most sigfincantly of all, going from 0.190 to 0.129.
+After exploring the rpart tuning parameters during gridsearch, we significantly increased the AUC score on our optimized model to 0.966 from 0.934, as well as decreased our MMCE from 0.089 to 0.054. IN our base model, we ran into issues with a large true negative rate (classifying spam emails as legit), which was reduced most significantly of all, going from 0.190 to 0.129.
 
 
 ```{r final_results, echo=FALSE, include=TRUE}
@@ -649,8 +664,6 @@ kable(cbind(Ensemble_Optimized = round(opt2,3), optimized = round(opt,3), base =
 ```
 
 
-
-
 While our grid searched optimized model exceeded our base model on each metric, we will want to visualize the optimizations using an ROC curve, which you can see below. 
 
 ``` {r roc_curve, include = TRUE, echo=FALSE, fig.height=5, fig.width=8.5}
@@ -669,7 +682,8 @@ qplot(x = fpr, y = tpr, color = learner, data = df$data, geom = "path")+
             text=element_text(size=14))
 ```
 
-Above, we can visually tell that our optimized rpart model outperforms the base rpart (with default parameters) with the more area under the curve (blue line compared to the red line). As the ROC AUC plot is made up of plotting the false positive rate with the false negative rate, we can visually see that the place where our optimized model most signficantly exceeds our base model is through it's ability to reduce true negatives that were unseen in the base model. 
+Above, we can visually tell that our optimized rpart model outperforms the base rpart (with default parameters) with the more area under the curve (blue line compared to the red line). As the ROC AUC plot is made up of plotting the false positive rate with the false negative rate, we can visually see that the place where our optimized model most significantly exceeds our base model is through its ability to reduce true negatives that were unseen in the base model.
+
 
 ```{r tune_feature importances}
 # which variables are most important?
@@ -691,21 +705,19 @@ ggplot(dat, aes(reorder(vars, importance, sum), importance))+
 ```
 Reviewing the optimized rpart Feature Importance, we can see that along with the perCaps and the bodyCharCt, one of the emerging leaders with feature importance is the number of forwards in an email for determining whether an email is valid or spam. Reviewing the decision tree plot above, we can see that if the number of forwards exceeds 6 times, then an email has been valid in previous instances. 
 
-```{r, echo=FALSE, include =FALSE, eval=FALSE}
-plotHyperParsEffect(data, x = "minsplit", y = "maxdepth", z = "auc.test.mean",
-  plot.type = "heatmap", partial.dep.learn = "regr.randomForest")
+```{r testing}
+
 # plot ROC curves for base and optimized
 df = generateThreshVsPerfData(list(base = spam.preds, 
                                    optimized = spam.opt.preds), 
                                    measures = list(fpr, tpr))
 plotROCCurves(df)
-qplot(x = fpr, y = tpr, color = learner, data = df$data, geom = "path")+
-  ggtitle("test")
+
 # what does our optimal threshold look like for our metrics?
 n = getTaskSize(spam.tsk)
 thresh_plot = generateThreshVsPerfData(spam.preds, measures = list(fpr, fnr, mmce))
 plotThreshVsPerf(thresh_plot)+
-  ggtitle("test")
+  ggtitle("Tests")
 ```
 
 ```{r dtree_explore, echo=FALSE, include=FALSE, eval=FALSE}
@@ -729,7 +741,7 @@ pred <- getRRPredictions(spam.base.clf)
 head(pred$data)
 # get individual model fits, turn on models = TRUE in resample()
 spam.base.clf$models
-# establish train and test (learning curve here?)
+# establish train and test 
 # 80/20 split works best
 spam.tsk = makeClassifTask(id = "spam", 
                            data = df$ximp, 
@@ -750,7 +762,7 @@ plotLearningCurve(r, facet="learner")
 # try some nested resampling for unbiased error assessment
 # on an outer CV, use inner to tune params, find best
 # train model on outer CV splits based on these params and test on outer CV split
-parallelStart(mode="multicore", cpus = 4)
+parallelStart(mode="multicore", cpus = 10)
 tune.lrn = makeTuneWrapper(learner = spam.lrn,
                            resampling = spam.resamp, # inner resampling loop
                            par.set = spam.ps, # parameters to test
