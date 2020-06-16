@@ -27,18 +27,33 @@ library(ltm)
 library(rpart.plot)
 library(knitr)
 ```
+
+# Abstract
+
+
+
 # Introduction
 
 According to the anti malware company Malwarebytes, "Spam is any kind of unwanted, unsolicited digital communication, often an email, that gets sent out in bulk. Spam is a huge waste of time and resources." At its most benign, spam is the digital equivalent of junk mail costing receipents nothing more than time and aggravation. However, spam emails can expose individuals and companies to a litany of attacks including phishing, ransomware, and most recently cryptojacking. These cyber attacks can result in significant costs to companies in the form of lost time, revenue, resources, and intelectual property. Without a good spam filter even the most sophisticated layered cyber defense system is vulnerable to a cyber attack that originates from malicious email carelessly opened by a trusting employee. For this reason spam filters are just as important to cyber security as firewalls . 
 
 The simplest forms of filters are list-based filters which as the name implies, take lists of words from a combination of black lists, grey lists, and white lists and compares the words in an email to its list, to determine if the email should be blocked, flagged, or allowed. These filters require continous list updates and result in both high false positve and false negative designations. A more effective filter is the heuristic filter that makes use of statistical methods and machine learning algorithms to determine the probablity that an individual email is spam. In this study we will create a decision tree based spam filter and compare it to a naive bayes based filter to determine the accuracy and precision of each.  
 
+# Background 
+
+Spam is generally defined as an email that has been sent en masse to many users with no commercial purpose. Spam emails can also include messages containing attachments that spread viruses through emails. Cleanrly, spam has become a major problem for users and businessness, which led to the advent of spam filters in email systems. In the past, these filters relied on keywords within the message to identify the spam. This can include list-based filters which can classify the sender, content-based filters, and collaborative filters where users report spam messages which are stored in the database. 
+
+Typically, researchers usee a taxonomy based on these web filters to present spam from spreading, and there are many different types of classification methods used to detect spam. Methods such as random forests, support vector machines, naive bayes and decision trees have been use to parse through these taxonomy filters and identify which play the greatest role in defining spam. This project will leverage decision trees so that we can build a taxonomy flow chart to better understand how the different email features relate to one another in identifying spam. 
+
+A decision tree is a graphing and modeling tool that is designed to visualize and structure models based on a given set of rules. We can use it to classify unlabled data using the remaining labled features to detect patterns. In the case of our email spam detection project, we will be primarily utilizing rpart (recursive partitioning package in R) as our primary modeling method. This method outputs a decision tree made up of the features and thier values as the leaves. Recursive partitioning is useful because it can be done for both classification and regression and can easily utilize categorical and continuous variables.
+
+Rpart is one of the most commonly used machine learning packages available in R and you will see that it's faily easily implemented, and can be easily tuned so that we can build an optimized model to improve our classification accuracy. Rpart uses a non-parametic CART algorithm, which will use the Gini Index as the splitting criteria.
+
 
 # Data
 
 ```{r, load data}
-#setwd("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials")
-setwd("C:/Users/Akuma2099/MachineLearning/QTW_Project_3")
+setwd("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit 5/Week_5_Materials")
+#setwd("C:/Users/Akuma2099/MachineLearning/QTW_Project_3")
 load("data.Rda") 
 load("resampling_binary")
 load("spam.tuned.clf")
@@ -95,6 +110,10 @@ The imputed values were merged into the original dataset to create a complete da
 ```{r,Data Prep NA}
 sum(is.na(emailDFrp))
 ```
+
+# Methods
+
+Prior to building our rpart  algorithm to classify spam and valid emails, we will explore our dataset to detect some trends that we can potentially leverage for our modeling. We will explore the correlation and independence between our predictor variables. We will also look at the relationship between our predictor variables and our isSpam response variable. We will also need to account for the 30 continuous and boolean factor variables and ensure each are being used in our model to maximize the performance. We will also leverage the rpart tuning parameters to identify the optimal features for identifying spam and valid emails as well as the optimal variable branches in our decision tree. 
 
 # Exploratory Data Analysis
 
@@ -414,12 +433,9 @@ From here, we will use rpart to build a decision tree with 14 splits as represen
 prp(splits, 0, extra=1, roundint=FALSE)
 
 rpart.plot(splits, type=3, clip.right.labs=FALSE, branch=.3,roundint=FALSE)
-rpart.rules(splits, extra = 4, clip.facs = TRUE,roundint=FALSE)
+#rpart.rules(splits, extra = 4, clip.facs = TRUE,roundint=FALSE)
 
-library(plotmo)
-plotmo(splits, type = "prob", nresponse = "Spam")
 
-#plotmo(splits, type = "prob", nresponse = "Spam", type2 = "image", ngrid2 = 200, pt.col = #ifelse(kyphosis$Kyphosis == "present", "red", "lightblue"))
 ```
 
 We can see from the decision tree above that we are using "bodyCharCt" multiple times in the splitting process for the training data. Additionally, we can see there is a bit of misclassification particularly as you go down the tree. Particularly in the sense of when we incorrectly classify spam emails as valid. 
@@ -687,351 +703,20 @@ ggplot(dat, aes(reorder(vars, importance, sum), importance))+
 ```
 Reviewing the Otpimized rpart Feature Importance, we can see that along with the "perCaps"" and the "bodyCharCt", one of the emerging leaders with feature importance is the number of forwards in an email in determining whether it is valid or spam. Reviewing the decision tree plot above, we can see that if the number of forwards exceeds 6 times, then an email has been valid in previous instances. 
 
+Even though our optimized decision tree is complex, we can still see some of the key features that define the classification of spam and valid emails (to a success rate of 96%). The number of forwards in the email was the biggest indicator in classifying spam vs valid. Reviewing it in our decision tree, we can see that when an email gets forwarded more than 7 times, it is related to 66% of spam instances. The next most important features, bodyCharCt, numLines and perCaps were the strongest indicators of spam vs not spam. With regards to PerCaps (which measure the percent of capital letters in an email message, we can see via our decision tree that if the percentage is above 15%, it has a greater likelihood of being spam. 
 
-```{r, echo=FALSE, include =FALSE, eval=FALSE}
-plotHyperParsEffect(data, x = "minsplit", y = "maxdepth", z = "auc.test.mean",
-  plot.type = "heatmap", partial.dep.learn = "regr.randomForest")
-# plot ROC curves for base and optimized
-df = generateThreshVsPerfData(list(base = spam.preds, 
-                                   optimized = spam.opt.preds), 
-                                   measures = list(fpr, tpr))
-plotROCCurves(df)
-qplot(x = fpr, y = tpr, color = learner, data = df$data, geom = "path")+
-  ggtitle("test")
-# what does our optimal threshold look like for our metrics?
-n = getTaskSize(spam.tsk)
-thresh_plot = generateThreshVsPerfData(spam.preds, measures = list(fpr, fnr, mmce))
-plotThreshVsPerf(thresh_plot)+
-  ggtitle("test")
-```
+## Conclusion
 
-```{r dtree_explore, echo=FALSE, include=FALSE, eval=FALSE}
-# this block is exploration of the mlr package in R
-# optimize both fnr and fpr
-spam.ctrl = makeTuneMultiCritControlGrid()
-library(emoa)
-spam.tuned.clf = tuneParamsMultiCrit( learner = spam.lrn, 
-                                      task = spam.tsk, 
-                                      resampling = spam.resamp.bin, # compare to same resampling method!
-                                      control = spam.ctrl, 
-                                      par.set = spam.ps, 
-                                      measures = list(fnr, fpr))
-df <- as.data.frame(trafoOptPath(spam.tuned.clf$opt.path))
-df[df$fnr.test.mean+df$fpr.test.mean == min(df$fnr.test.mean+df$fpr.test.mean),] # use this to fit
-lrn = setHyperPars(makeLearner("classif.rpart"), par.vals = list(cp=0.001, minsplit=5, maxdepth=15))
-# get a list of preds for each fold
-getRRPredictionList(spam.base.clf)
-# get all ze data!
-pred <- getRRPredictions(spam.base.clf)
-head(pred$data)
-# get individual model fits, turn on models = TRUE in resample()
-spam.base.clf$models
-# establish train and test (learning curve here?)
-# 80/20 split works best
-spam.tsk = makeClassifTask(id = "spam", 
-                           data = df$ximp, 
-                           target = "isSpam", 
-                           check.data = FALSE)
-spam.lrn = makeLearner("classif.rpart",  # use rpart algorithm, gini index is default for splitting
-                        id ="spam", # give it an id
-                        fix.factors.prediction = TRUE, # control for missing class if any)
-                        predict.type = 'prob') 
-r <- generateLearningCurveData(
-  learners = spam.opt.lrn,
-  task = spam.tsk,
-  percs = seq(0.1, 1, by = 0.1),
-  measures = list(auc, setAggregation(auc, train.mean)),
-  resampling = makeResampleDesc(method = "CV", iters = 10, stratify = TRUE, predict="both"),
-  show.info = FALSE)
-plotLearningCurve(r, facet="learner")
-# try some nested resampling for unbiased error assessment
-# on an outer CV, use inner to tune params, find best
-# train model on outer CV splits based on these params and test on outer CV split
-parallelStart(mode="multicore", cpus = 4)
-tune.lrn = makeTuneWrapper(learner = spam.lrn,
-                           resampling = spam.resamp, # inner resampling loop
-                           par.set = spam.ps, # parameters to test
-                           control = spam.ctrl, # control
-                           measures = auc,
-                           show.info = FALSE)
-# unbiased test outer cross validation
-outer = makeResampleDesc("CV", iters = 3, stratify = TRUE)
-r = resample(tune.lrn, 
-             spam.tsk, 
-             resampling = outer, 
-             extract = getTuneResult,
-             measures = auc,
-             show.info = FALSE)
-parallelStop()
-getNestedTuneResultsX(r)
-data <- generateHyperParsEffectData(r, partial.dep = TRUE)
-plotHyperParsEffect(data[[1]], x = "iteration", y = "auc.test.mean",
-                    plot.type = "line", partial.dep.learn = "regr.randomForest")
-```
+Through a detailed exploratory data analysis, rpart modeling, testing of various models and hyperparameter tuning, we were able to leverage rpart's baseline tuning to achieve a high auc and a low misclassification rate, false positive rate, and true negative rate. Then we were able to turn our parameters to achieve nearly a 97% accuracy in partitioning between spam and valid email messages. However, when we applied the same hyperparameter tunes that we found in our python modeling ensemble, we were not able to achieve the same results as our optimized grid search. We determined that the complexity penalty that we applied to our rpart plays a strong role in our optimized AUC score given our analysis. Inthe end, using our optimized model, we found that our partitioning was made up into a relatively complex (and difficult to read) rpart decision tree. 
 
-```{r nbayes_get_data, echo=FALSE, include=FALSE, eval=TRUE}
-# RSpamData not available in R 3.4.3
-spamPath <- "Data"
-dirNames <- list.files(path = spamPath, full.names = TRUE)
-fileNames <- list.files(dirNames[1], full.names = TRUE)
-sapply(dirNames, function(x) length(list.files(x)))
-# pick random emails
-idx = c(1:5, 15, 27, 68, 69, 329, 404, 427, 516, 852, 971)
-sampleEmail = sapply(list.files(dirNames[1], full.names = TRUE)[idx], readLines)
-# split into header and body
-splitMessage <- function(msg) {
-  splitPoint = match("", msg) # find first blank line
-  header = msg[1:(splitPoint-1)] # get header, will use this for attachments
-  body = msg[ -(1:splitPoint) ] # get body
-  return(list(header = header, body = body))
-}
-sampleSplit <- lapply(sampleEmail, splitMessage)
-# get headers
-headerList = lapply(sampleSplit, function(msg) msg$header)
-# get boundary id from multi-part email
-getBoundary<- function(header) {
-  boundaryIdx = grep("boundary=", header) # index boundary
-  boundary = gsub('"', "", header[boundaryIdx]) # replace quotes
-  gsub(".*boundary= *([^;]*);?.*", "\\1", boundary) # regexrepl with first group match
-}
-# pass boundary and body of each message
-dropAttach = function(body, boundary){
-  bString = paste("--", boundary, sep = "") 
-  bStringLocs = which(bString == body)# find start locs for each section of body
-  # -- is arbitrary
-  
-  if (length(bStringLocs) <= 1) return(body) # if no boundaries, give me back body
-  
-  eString = paste("--", boundary, "--", sep = "") # ending boundary string
-  eStringLoc = which(eString == body) # ending string loc
-  if (length(eStringLoc) == 0)  # if no ending string return first part of body
-    return(body[ (bStringLocs[1] + 1) : (bStringLocs[2] - 1)])
-  
-  # otherwise get length of body
-  n = length(body)
-  # if ending boundary string < rows, return body + ending rows after ending boundary
-  if (eStringLoc < n) 
-     return( body[ c( (bStringLocs[1] + 1) : (bStringLocs[2] - 1), 
-                    ( (eStringLoc + 1) : n )) ] )
-  
-  # finally, return body if no other conditions met
-  return( body[ (bStringLocs[1] + 1) : (bStringLocs[2] - 1) ])
-}
-# clean up punctuation, numbers, spaces
-cleanText =
-function(msg)   {
-  tolower(gsub("[[:punct:]0-9[:space:][:blank:]]+", " ", msg))
-}
-findMsgWords = 
-function(msg, stopWords) {
- if(is.null(msg))
-  return(character())
-  # split and return vector of cleaned words
- words = unique(unlist(strsplit(cleanText(msg), "[[:blank:]\t]+")))
- 
- # drop empty and 1 letter words
- words = words[ nchar(words) > 1]
- words = words[ !( words %in% stopWords) ]
- invisible(words)
-}
-processAllWords = function(dirName, stopWords)
-{
-  # read all files in a given directory
-  fileNames = list.files(dirName, full.names = TRUE)
-  # drop files that are not email
-  notEmail = grep("cmds$", fileNames)
-  
-  if ( length(notEmail) > 0) fileNames = fileNames[ - notEmail ]
-  # read all messages into a list
-  messages = lapply(fileNames, readLines, encoding = "latin1")
-  
-  # split header and body for each message
-  emailSplit = lapply(messages, splitMessage)
-  # put body and header in own lists
-  bodyList = lapply(emailSplit, function(msg) msg$body)
-  headerList = lapply(emailSplit, function(msg) msg$header)
-  # save some memory, kill emailSplit var
-  rm(emailSplit)
-  
-  # determine which messages have attachments
-  hasAttach = sapply(headerList, function(header) {
-    CTloc = grep("Content-Type", header)
-    if (length(CTloc) == 0) return(0)
-    multi = grep("multi", tolower(header[CTloc])) 
-    if (length(multi) == 0) return(0)
-    multi # has attachment
-  })
-  
-  # get indices for which messages have attachments
-  hasAttach = which(hasAttach > 0)
-  
-  # find boundary strings for messages with attachments
-  boundaries = sapply(headerList[hasAttach], getBoundary)
-  
-  # drop attachments from message bodies
-  bodyList[hasAttach] = mapply(dropAttach, bodyList[hasAttach], 
-                               boundaries, SIMPLIFY = FALSE)
-  
-  # extract words from body
-  msgWordsList = lapply(bodyList, findMsgWords, stopWords)
-  
-  invisible(msgWordsList)
-}
-msgWordsList = lapply(dirNames, processAllWords, stopWords=stopWords)
-numMsgs = sapply(msgWordsList, length)
-# identify which messages are spam based on num Msgs
-isSpam = rep(c(FALSE, FALSE, FALSE, TRUE, TRUE), numMsgs)
-# list of vectors of cleaned words for each message
-msgWordsList = unlist(msgWordsList, recursive = FALSE)
-```
+If we had a dataset that was more balanced between spam and valid emails, while also being large enough to parse between the number of decision tree combinations to effectively classify between spam and valid emails. Looking further into the decision thresholds and learning curves should help with optimizing the classification criteria and the training data to fit an optimal rpart model. 
 
-``` {r nbayes_train_test_split, echo=FALSE, include=FALSE, eval=FALSE}
-set.seed(418910)
-numEmail = length(isSpam)
-numSpam = sum(isSpam)
-numHam = numEmail - numSpam
-# take 1/3 of data for testing from each class spam ham
-testSpamIdx = sample(numSpam, size =floor(numSpam/3))
-testHamIdx = sample(numHam, size=floor(numHam/3))
-# get word vectors from msgWordsList
-# test
-testMsgWords = c((msgWordsList[isSpam])[testSpamIdx],
-                 (msgWordsList[!isSpam])[testHamIdx])
-# train
-trainMsgWords = c((msgWordsList[isSpam])[-testSpamIdx],
-                 (msgWordsList[!isSpam])[-testHamIdx])
-# get labels for train and test
-testIsSpam = rep(c(TRUE, FALSE), 
-                 c(length(testSpamIdx), length(testHamIdx)))
-trainIsSpam = rep(c(TRUE, FALSE), 
-                 c(numSpam - length(testSpamIdx), 
-                   numHam - length(testHamIdx)))
-```
+## Deployment
 
-```{r nbayes_freq_table, echo=FALSE, include=FALSE, eval=FALSE}
-computeFreqs <- function(wordsList, spam, bow = unique(unlist(wordsList))) {
-   # create a matrix for spam, ham, and log odds
-  wordTable = matrix(0.5, nrow = 4, ncol = length(bow), # default value is 0.5
-                     dimnames = list(c("spam", "ham",  # name dimensions
-                                        "presentLogOdds", 
-                                        "absentLogOdds"),  bow))
-  # build frequency table 
-  # For each spam message, add 1 to counts for words in message
-  counts.spam = table(unlist(lapply(wordsList[spam], unique)))
-  wordTable["spam", names(counts.spam)] = counts.spam + .5
-   # Similarly for ham messages
-  counts.ham = table(unlist(lapply(wordsList[!spam], unique)))  
-  wordTable["ham", names(counts.ham)] = counts.ham + .5  
-   # Find the total number of spam and ham
-  numSpam = sum(spam) # from T/F vector passed to func
-  numHam = length(spam) - numSpam
-  # Prob(word|spam) and Prob(word | ham)
-  # compute probabilities for each word given spam or ham
-  wordTable["spam", ] = wordTable["spam", ]/(numSpam + .5)
-  wordTable["ham", ] = wordTable["ham", ]/(numHam + .5)
-  
-   # calculate log odds
-  # log odds of presence
-  wordTable["presentLogOdds", ] = 
-     log(wordTable["spam",]) - log(wordTable["ham", ])
-  # log odds of absence
-  wordTable["absentLogOdds", ] = 
-     log((1 - wordTable["spam", ])) - log((1 -wordTable["ham", ]))
-  invisible(wordTable)
-}
-```
+The borders of what we are classifying as “spam” is blurred between those that are accepted by the users, so that means there’s a balance that needs to be struck between being too lenient and just classifying commercial emails as spam, and too egregious so that we are sending important emails to the junk folder. As the spam mailers are getting more savvy with dodging these algorithms used to detect spam while also being able to send messages en masse, this would mean that our algorithm would need to be constantly updated with new data to ensure that it’s detecting and learning from the the latest trends and tactics. 
 
-```{r nbayes_classify, echo=FALSE, include=FALSE, eval=FALSE}
-# use our frequency and odds table to classify new messages
-computeMsgLLR = function(words, freqTable) 
-{
-       # Discards words not in training data.
-  words = words[!is.na(match(words, colnames(freqTable)))]
-       # Find which words are present
-  present = colnames(freqTable) %in% words
-  sum(freqTable["presentLogOdds", present]) +
-    sum(freqTable["absentLogOdds", !present])
-}
-testLLR = sapply(testMsgWords, computeMsgLLR, trainTable)
-tapply(testLLR, testIsSpam, summary)
-pdf("SP_Boxplot.pdf", width = 6, height = 6)
-spamLab = c("ham", "spam")[1 + testIsSpam]
-boxplot(testLLR ~ spamLab, ylab = "Log Likelihood Ratio",
-      #  main = "Log Likelihood Ratio for Randomly Chosen Test Messages",
-        ylim=c(-500, 500))
-dev.off()
-typeIErrorRate = 
-function(tau, llrVals, spam)
-{
-  classify = llrVals > tau
-  sum(classify & !spam)/sum(!spam)
-}
-typeIErrorRate(0, testLLR,testIsSpam)
-typeIErrorRate(-20, testLLR,testIsSpam)
-typeIErrorRates = 
-function(llrVals, isSpam) 
-{
-  o = order(llrVals)
-  llrVals =  llrVals[o]
-  isSpam = isSpam[o]
-  idx = which(!isSpam)
-  N = length(idx)
-  list(error = (N:1)/N, values = llrVals[idx])
-}
-typeIIErrorRates = function(llrVals, isSpam) {
-    
-  o = order(llrVals)
-  llrVals =  llrVals[o]
-  isSpam = isSpam[o]
-    
-    
-  idx = which(isSpam)
-  N = length(idx)
-  list(error = (1:(N))/N, values = llrVals[idx])
-  }  
-xI = typeIErrorRates(testLLR, testIsSpam)
-xII = typeIIErrorRates(testLLR, testIsSpam)
-tau01 = round(min(xI$values[xI$error <= 0.01]))
-t2 = max(xII$error[ xII$values < tau01 ])
-pdf("LinePlotTypeI+IIErrors.pdf", width = 8, height = 6)
-library(RColorBrewer)
-cols = brewer.pal(9, "Set1")[c(3, 4, 5)]
-plot(xII$error ~ xII$values,  type = "l", col = cols[1], lwd = 3,
-     xlim = c(-300, 250), ylim = c(0, 1),
-     xlab = "Log Likelihood Ratio Values", ylab="Error Rate")
-points(xI$error ~ xI$values, type = "l", col = cols[2], lwd = 3)
-legend(x = 50, y = 0.4, fill = c(cols[2], cols[1]),
-       legend = c("Classify Ham as Spam", 
-                  "Classify Spam as Ham"), cex = 0.8,
-       bty = "n")
-abline(h=0.01, col ="grey", lwd = 3, lty = 2)
-text(-250, 0.05, pos = 4, "Type I Error = 0.01", col = cols[2])
-mtext(tau01, side = 1, line = 0.5, at = tau01, col = cols[3])
-segments(x0 = tau01, y0 = -.50, x1 = tau01, y1 = t2, 
-         lwd = 2, col = "grey")
-text(tau01 + 20, 0.05, pos = 4,
-     paste("Type II Error = ", round(t2, digits = 2)), 
-     col = cols[1])
-dev.off()
-k = 5
-numTrain = length(trainMsgWords)
-partK = sample(numTrain)
-tot = k * floor(numTrain/k)
-partK = matrix(partK[1:tot], ncol = k)
-testFoldOdds = NULL
-for (i in 1:k) {
-  foldIdx = partK[ , i]
-  trainTabFold = computeFreqs(trainMsgWords[-foldIdx], trainIsSpam[-foldIdx])
-  testFoldOdds = c(testFoldOdds, 
-               sapply(trainMsgWords[ foldIdx ], computeMsgLLR, trainTabFold))
-}
-testFoldSpam = NULL
-for (i in 1:k) {
-  foldIdx = partK[ , i]
-  testFoldSpam = c(testFoldSpam, trainIsSpam[foldIdx])
-}
-xFoldI = typeIErrorRates(testFoldOdds, testFoldSpam)
-xFoldII = typeIIErrorRates(testFoldOdds, testFoldSpam)
-tauFoldI = round(min(xFoldI$values[xFoldI$error <= 0.01]))
-tFold2 = xFoldII$error[ xFoldII$values < tauFoldI ]
-```
+These findings don’t just have value for the email service providers, but also to email writers as well. Knowing the algorithms that email servers use to parse between spam and valid emails, will help marketers and users better craft their emails in such a way that will get through the spam filters and reach their desired audiences. This would mean focusing on elements such as avoiding over capitalization and writing a long body email (using a lot of characters) will look more valid to email filters. 
+
+## References
+
+Nolan, D., Temple Lang, D. DATA SCIENCE IN R: a Case Studies Approach to Computational Reasoning and Problem Solving. CRC PRESS, 2017.
