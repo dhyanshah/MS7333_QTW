@@ -368,7 +368,7 @@ A Naive Bayes classifier is a probabilistic machine learning model that uses Bay
 First, we execute and 80/20 split stratified on the "isSpam" response variable to account for the unbalanced data. Like our full dataset the distribution of spam emails in both the training and testing sets is close to 25%
 
 
-```{r, Train-Test Split}
+```{r, Train-Test Split, include = FALSE, echo=FALSE}
 library(rsample)
 library(caret)
 library(MLmetrics)
@@ -379,8 +379,9 @@ split <- initial_split(emailDFrp, prop = .8, strata = "isSpam")
 EDFtrain <- training(split)
 EDFtest  <- testing(split)
 
+```{r}
 table(EDFtrain$isSpam) %>% prop.table()
-
+```
 ```
 The training data is then modeled using the Naive Bayes method with 10-fold cross validation as the train control. No other parameter tuning was applied. The resulting model has a 99.3% accuracy score on the training data and is applied to the test data set.    
 
