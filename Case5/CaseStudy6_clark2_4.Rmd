@@ -51,6 +51,50 @@ Package rpart is one of the most commonly used machine learning packages availab
 
 
 
+# Data
+
+```{r, load data}
+#setwd("/Users/danielclark/Desktop/SMU/Quantifying_the_World/Unit #5/Week_5_Materials/MS7333_QTW-master/Case5")
+setwd("C:/Users/Akuma2099/MachineLearning/QTW_Project_3")
+load("data.Rda") 
+load("resampling_binary")
+load("spam.tuned.clf")
+
+ls()
+```
+The data consists of 9348 observations. Each observation represents 1 email message with up to 30 variables. The first variable, "isSpam" is a 2-level categorical variable that denotes whether the message was known to be spam. This will serve as the response variable for the study. The remaining variables consist of 16 categorical and 13 numeric variables that represent characteristics of the email such as "isRe" which denotes whether an email contains the "RE" prefix in the subject line, "hour" which denotes the hour of the day in which the email was received, "bodyCharCt" which represents the number of characters in the body of the message, and "perCaps" which represents the percent of characters that where capitalized.  More detail of the variables in play can be found below:
+
+*isRe (logical) - TRUE if Re: appears at the start of a subject
+*numLines (integer) - Number of lines in the body of the message
+*bodyCharCt (integer) - Number of characters in the body of the message
+*underscore (logical) - TRUE if email addresses in the from field of the header contains an underscore
+*subExcCt (integer) - Number of exclamation marks in the subject.
+*subQuesCt (integer) - Number of question marks in the subject.
+*numAtt (integer) - Number of Attachments in the message
+* priority (logical) - TRUE if a priority key is present in the header
+*numRec (numeric) - Number of recipients of the message, including CCs
+*perCaps (numeric) - Percentage of capitals among all letters in the message body, excluding attachments
+*isInReplyTo (logical) - TRUE if the In-Reply-To key is present int he header
+*sortedRec (logical) - True if the recipients email addresses are sorted
+*subFunc (logical) - TRUE if the words int eh subject have punctuation or numbers embedded in them
+*hour (numeric) - Hour of the Day in the Date field
+*multipartText (logical) - TRUE if the MIME type is multipart / text
+*hasImages (logical) - True if the message contains images
+*isPGPsigned (logical) - TRUE if the message contains a PGP signature
+*perHTML(numeric) - Percentage of characters in HTML tags in the message body in comparison to all characters
+*subSpamWords (logical) - TRUE if the subject contains one of the words in a spam word vector
+*subBlanks (numeric) - percentage of blanks in the subject
+*noHost (logical) - TRUE if there is no hostname in the Message-Id key in the header
+*numEnd (logical) - TRUE if the email senders address (before the @) ends in a number
+*isYelliing (logical) - TRUE if the subject is all capital letters
+*forwards (numeric) - Number of forward symbols in a line of the body, e.g. >>> xxx contains 3 forwards
+*isOrigMsg (logical) - TRUE if the message body contains the phrase original message
+*isDear (logical) - TRUE if the message body contains the word Dear
+*isWrote (logical) - TRUE if the message contains the phrase wrote: 
+*avgWordLen (numeric) - The average length of the words in a message
+*numDir (numeric) - Number of dollar signs in the message body.
+
+
 ```{r, Pre-EDA Structure, include = TRUE, cache=TRUE, echo=FALSE}
 str(emailDFrp)
 ```
@@ -63,7 +107,7 @@ emailDFrp$isSpam <- emailDFrp$isSpam %>%
                         relevel("Spam")
 ```
 
-A check of NA values by column indicated that there were up to 363 obeservations with missing values of the following seven variables:   
+A check of NA values by column indicated that there were up to 363 observations with missing values of the following seven variables:   
 
 * subSpamWords
 * subQuesCt
@@ -102,7 +146,7 @@ sum(is.na(emailDFrp))
 
 # Methods
 
-Prior to building our rpart  algorithm to classify spam and valid emails, we will explore our dataset to detect some trends that we can potentially leverage for our modeling. We will explore the correlation and independence between our predictor variables. We will also look at the relationship between our predictor variables and our isSpam response variable. We will also need to account for the 30 continuous and Boolean factor variables and ensure each are being used in our model to maximize the performance. We will also leverage the rpart tuning parameters to identify the optimal features for identifying spam and valid emails as well as the optimal variable branches in our decision tree. 
+Prior to building our rpart algorithm to classify spam and valid emails, we will explore our dataset to detect some trends that we can potentially leverage for our modeling. We will explore the correlation and independence between our predictor variables. We will also look at the relationship between our predictor variables and our isSpam response variable. We will also need to account for the 30 continuous and Boolean factor variables and ensure each are being used in our model to maximize the performance. We will also leverage the rpart tuning parameters to identify the optimal features for identifying spam and valid emails as well as the optimal variable branches in our decision tree. 
 
 # Exploratory Data Analysis
 
@@ -123,9 +167,10 @@ emailDFrp %>%
       theme(text=element_text(size=12))
 ```
 
-The chart above shows that we have an unbalanced dataset with nearly 2,400 spam emails compared with nearly 7,000 non-spam  (valid) emails. This means that, roughly, 1 of every 4 emails in our set are considered spam. This fact highlights the possible need to account for the imbalance in our future modeling, and ensure that we are tuning and training our models such that they are not being rewarded for leaning too much on assigning the valid class to new valid. That said, because the unbalance is not huge, we will not need to apply oversampling methods to address this issue. 
+The chart above shows that we have an unbalanced dataset with nearly 2,400 spam emails compared with nearly 7,000 non-spam (valid) emails. This means that, roughly, 1 of every 4 emails in our set are considered spam. This fact highlights the possible need to account for the imbalance in our future modeling and ensure that we are tuning and training our models such that they are not being rewarded for leaning too much on assigning the valid class to new valid. That said, because the unbalance is not huge, we will not need to apply oversampling methods to address this issue. 
 
-A quick review of the numeric variables indicates that there is a great degree of variation both within and between the individual variables. This indicates that normalization or standardization might be necessary. 
+A quick review of the numeric variables indicates that there is a great degree of variation both within and between the individual variables. This indicates that normalization or standardization might be necessary.
+
 
 ```{r, EDA summary, include=TRUE, echo=FALSE}
 summary(emailDFrp[,18:30])
@@ -206,7 +251,8 @@ fishers %>%
 
 The lower p values indicate that we reject the null of a randomized association between dichotomous variables. Here we see that there are some large non-random dependencies for variables such as "isWrote" which indicate whether an email is electronically scribed. Because this is apparent in almost all instances, we can likely remove. However, there are some instances for variables such as "priority" and "noHost" which may be interesting for identifying spam. This would make sense as the lack of host name and sender are variables written by the email sender.
 
-We can also visually review the correlation between factors and continuous variables using a biserial correlation (as we have dichotomous factors for all of our non-continuous variables). After review, we see some relationships emerg:. 
+We can also visually review the correlation between factors and continuous variables using a biserial correlation (as we have dichotomous factors for all our non-continuous variables). After review, we see some relationships emerge.
+
 
 ```{r biser_cor, include=TRUE, echo=FALSE, cache=TRUE, fig.height=7, fig.width=8.5}
 # we use biserial correlation in order to get a more accurate picture of factor v continous relationships
@@ -243,9 +289,10 @@ Overall, we will look into ways that continuous and categorical variables can be
 
 #### Response Variable Relationships
 
-As mentioned before, the majority of instances in our dataset were not considered spam. That said, we can visualize the relationships between spam and valid emails for the categorical and continuous predictor variables using different plotting techniques. 
+As mentioned before, most instances in our dataset were not considered spam. That said, we can visualize the relationships between spam and valid emails for the categorical and continuous predictor variables using different plotting techniques. 
 
 First, we will look further into "isRe", "numEnd", "subSpamWords" and "isWrote". The variable "numEnd" indicates whether or not the 'from' email prefix ends with a number, such as 'clark.daniel424@gmail.com.'
+
 
 ```{r bool_impact, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
 # which factor variables are worth splitting?
@@ -269,9 +316,10 @@ emailDFrp[, c(1,which(bools)+1)] %>%
     scale_x_discrete("Is Spam - True or False")
 ```
 
-In the chart above, "subSpamWords" is a Boolean that indicates when a known spam word is indicated in the subject of an email, such as viagra which would trigger a value for "subSpamwords". The majority of our spam cases happen when factors are set to false. Additionally, the mostly valid emails are related to instances when "isRe" and "isWrote" are set to true. This will prove to be usefull when seeing how a decision tree can be split between our categorical variables in the decision function to determine if an email is spam or not spam. 
+In the chart above, "subSpamWords" is a Boolean that indicates when a known spam word is indicated in the subject of an email, such as viagra which would trigger a value for "subSpamwords". Many of our spam cases happen when factors are set to false. Additionally, the mostly valid emails are related to instances when "isRe" and "isWrote" are set to true. This will prove to be useful when seeing how a decision tree can be split between our categorical variables in the decision function to determine if an email is spam or not spam. 
 
-We will also look into the separation of classes for numeric variables by looking at the log values for our numeric placements in a box plot. We will review some of the interesting numerics in the figure below. 
+We will also investigate the separation of classes for numeric variables by looking at the log values for our numeric placements in a box plot. We will review some of the interesting numerics in the figure below.
+
 
 
 ```{r numeric_impact, include = TRUE, echo=FALSE, cache = TRUE, fig.width=8.5, fig.height=3}
@@ -295,18 +343,19 @@ emailDFrp[,c(1, nums)] %>%
       ylab("Log Value")
 ```
 
-The "forwards" predictor variable, shows a great concentration of value distribution for the third quartile of messages that are labeled as valid. The "perCaps" predictor variable shows a larger predictor interval for spam than valid emails. We can also see that the median value for spam is higher than the valid messages. On "perHTML", the mean and median value for valid emails is nearly zero while the range is much greater for the spam messages.
+The “forwards” predictor variable shows a great concentration of value distribution for the third quartile of messages that are labeled as valid. The "perCaps" predictor variable shows a larger predictor interval for spam than valid emails. We can also see that the median value for spam is higher than the valid messages. On "perHTML", the mean and median value for valid emails is nearly zero while the range is much greater for the spam messages.
 
-Examination of these predictor variables indicates that we may have some leads to uncovering a predictor and important features related to detecting spam. 
+Examination of these predictor variables indicates that we may have some leads to uncovering a predictor and important features related to detecting spam.
 
 # Modeling
 
 
 ### Base Model Naive Bayes
 
-A Naive Bayes classifier is a probabilistic machine learning model that uses Bayes theorem to calculate the probability of a condition being true, given that another codition has occurred. Naive Bayes classifiers work on the assumption that the predictors variables are independent.
+A Naive Bayes classifier is a probabilistic machine learning model that uses Bayes theorem to calculate the probability of a condition being true, given that another condition has occurred. Naive Bayes classifiers work on the assumption that the predictors variables are independent.
 
-To begin we perform and 80/20 split stratified on the "isSpam" response variable to account for the unbalanced data. Like our full dataset the distribution of spam emails in both the training and testing sets is close to 25%
+First, we execute and 80/20 split stratified on the "isSpam" response variable to account for the unbalanced data. Like our full dataset the distribution of spam emails in both the training and testing sets is close to 25%
+
 
 ```{r, Train-Test Split}
 library(rsample)
@@ -322,8 +371,7 @@ EDFtest  <- testing(split)
 table(EDFtrain$isSpam) %>% prop.table()
 
 ```
-
-The training data is then modeled using the Naive Bayes method with 10 fold cross validation as the train control. No other parameter tuning was applied. The resulting model has a 99.3% accuracy score on the training data and is applied to the test data set.     
+The training data is then modeled using the Naive Bayes method with 10-fold cross validation as the train control. No other parameter tuning was applied. The resulting model has a 99.3% accuracy score on the training data and is applied to the test data set.    
 
 ```{r, NB Model, include=TRUE, echo=FALSE, cache=TRUE}
 cores<-detectCores()
@@ -352,25 +400,26 @@ registerDoParallel(cl)
   confusionMatrix(nb1)
 ```
 
-The 
+
 
 ```{r NB Test, include=FALSE, echo=FALSE}
 pred <- predict(nb1, newdata = EDFtest)
 ```
-When applied to the test set the Naive Bayes model accurately classified 466 out of 467 spam emails giving it a .9979 Precision score and a .0021 false positive rate. The model accurately classified 1389 our of 1401 valid email giving it a .9729 Recall score and a .0271 false positive rate. The model performed very well, but the stratified clean data may have resulted in a certain degree of data leakeage and may not generalize well.         
+When applied to the test set the Naive Bayes model accurately classified 466 out of 467 spam emails giving it a .9979 Precision score and a .0021 false positive rate. The model accurately classified 1389 of our 1401 valid email giving it a .9729 Recall score and a .0271 false positive rate. The model performed very well, but the stratified clean data may have resulted in a certain degree of data leakage and may not generalize well.         
 
 ``` {r NB Matrix, include=TRUE, echo=FALSE, cache=TRUE}
 confusionMatrix(pred, EDFtest$isSpam, mode = "prec_recall")
 ```
-With a baseline established we began the creation of a decision tree based model by starting with variable selection. 
+
+With a baseline established we began the creation of a decision tree-based model by starting with variable selection. 
 
 ### Variable Selection and Model Comparison Setup
 
-In hopes to avoid the complexity of variable selection algorithms to run an algorithm against our email data set, we will set up a fit of an rpart model using the training data an all 29 features and default model parameters. For the default parameters for rpart, we will use a minsplit of 20 along with a complexity parameter of 0.01 with a max depth of 30. The splitting criteria will use the default Gini Index. 
+In hopes to avoid the complexity of variable selection algorithms to run an algorithm against our email data set, we will set up a fit of a rpart model using the training data an all 29 features and default model parameters. For the default parameters for rpart, we will use a minsplit of 20 along with a complexity parameter of 0.01 with a max depth of 30. The splitting criteria will use the default Gini Index. 
 
 for our setup, we will use an 80/20 split between the training and testing set. Since we have an unbalanced relationship between spam emails and valid emails, we can use a stratified sampling of the observations in our training and testing data sets to ensure we maintain the original balance. We have 9,348 total observations, so this would mean that our testing set will have roughly 1,800 observations. 
 
-As we will run a series of models in our experiment, we will maintain this distribution of training and testing data for each model. As our rpart is trained, it will provide a listing of variables that are playing the greatest role in deciding upon valid or spam email. The chart below provides the most important features using the rpart base model. 
+As we will run a series of models in our experiment, we will maintain this distribution of training and testing data for each model. As our rpart is trained, it will provide a listing of variables that are playing the greatest role in deciding upon valid or spam email. The chart below provides the most important features using the rpart base model.
 
 ```{r fit_dtree_base, echo=FALSE, include=TRUE, fig.height=5, fig.width=8.5}
 # we fit the base rpart model in this block
@@ -423,9 +472,9 @@ ggplot(dat, aes(reorder(vars, importance, sum), importance))+
     xlab("Feature Splits")+
     ylab("Importance Value")
 ```
-Figure 7, indicates that "perCaps" is the most important feature in defining the spam messages using the rpart base model. "perCaps"  is the percentage of capital alpha characters in the body of the email. For this model, the importance is weighted  based on the sum of the impurity for each variable split. Secondly and thirdly, we can see that "numLines" and "bodyCharCt" hold the second and third-most important variables in our model. 
+Figure 7 indicates that "perCaps" is the most important feature in defining the spam messages using the rpart base model. "perCaps” is the percentage of capital alpha characters in the body of the email. For this model, the importance is weighted based on the sum of the impurity for each variable split. Secondly and thirdly, we can see that "numLines" and "bodyCharCt" hold the second and third-most important variables in our model. 
 
-We will also look into the rpart control parameters and their ability to classify spam emails based on fitting a separate, optimized rpart model. To do this, we will look into 4 different parameters for tuning. Below, we outline the description of these. 
+We will also investigate the rpart control parameters and their ability to classify spam emails based on fitting a separate, optimized rpart model. To do this, we will investigate 4 different parameters for tuning. Below, we outline the description of these. 
 
 * Complexity parameter (cp) - A scaled complexity penalty that ranges from 0 to 1. The cp is compared against the error rate related to the previous split. Any split that does not decrease the error rate is not considered. 
 * Minsplit - the minimum number of observations that need to exist in a node for the split to be attempted. 
@@ -434,11 +483,13 @@ We will also look into the rpart control parameters and their ability to classif
 
 We will use decision trees to avoid overfitting.
 
+
 #### Hyperparameter Optimization
 
 We will be exploring a discrete list of the 4 parameters of interest to help ensure we are running the models as quickly and efficiently as possible. A grid search procedure will be used in conjunction with a 10-fold cross-validation. 
 
-We are going to be using our 4-panel procedure for evaluating classification performance and maximizing true positive classification where "spam" is the positive class. We will measure this using an ROC (AUC) curve and determining which model provides us the greatest area under the curve. A false positive would mean that a valid email will be marked as spam. A false negative would mean that a spam message is misidentified as a legitimate email. The latter 2 would mean that we have a model error. 
+We are going to be using our 4-panel procedure for evaluating classification performance and maximizing true positive classification where "spam" is the positive class. We will measure this using a ROC (AUC) curve and determining which model provides us the greatest area under the curve. A false positive would mean that a valid email will be marked as spam. A false negative would mean that a spam message is misidentified as a legitimate email. The latter 2 would mean that we have a model error.
+
 
 
 ## Base Decision Tree Model Results
@@ -474,9 +525,10 @@ g+
         text=element_text(size=12))+     
   guides(shape = guide_legend(override.aes = list(size = 3)))
 ```
-The plot above provides a log scale visualization of the classification regions. The observations in white are mis-classifications while the color boundaries represents the outcomes for the spam email. The lighter shades of blue and pink represent the lower probabilities for the perCaps and bodyCharCt classes. As shown in Fig. 8, using only 2 features in our model results in a high frequency of false positives as indicated by the number of circles in the blue section. To improve upon this, we will need to include more variables to increase performance. However, these 2 seem to be a good starting point. 
+The plot above provides a log scale visualization of the classification regions. The observations in white are misclassifications while the color boundaries represents the outcomes for the spam email. The lighter shades of blue and pink represent the lower probabilities for the perCaps and bodyCharCt classes. As shown in Fig. 8, using only 2 features in our model results in a high frequency of false positives as indicated by the number of circles in the blue section. To improve upon this, we will need to include more variables to increase performance. However, these 2 seem to be a good starting point. 
 
-From here, we used rpart to build a decision tree with 14 splits as represented below. We will start with the default decision tree as discussed in the previous section, and fit it with the training data set. 
+From here, we used rpart to build a decision tree with 14 splits as represented below. We will start with the default decision tree as discussed in the previous section and fit it with the training data set.
+
 
 ```{r tree_plot, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
 # print a pretty tree plot of our base rpart model
@@ -490,7 +542,8 @@ rpart.plot(splits, type=3, clip.right.labs=FALSE, branch=.3,roundint=FALSE)
 
 We can see from the decision tree above that we are using "bodyCharCt" multiple times in the splitting process for the training data. Additionally, we can see there is a bit of misclassification particularly as you go down the tree. Particularly in the sense of when we incorrectly classify spam emails as valid. 
 
-We will now leverage the test data to produce a confusion matrix to detirmine the model performance in the table below. As mentioned previously, we will be reviewing false positive rate, false negative rate, MMCE (model misclassification error) and ROC AUC.
+We will now leverage the test data to produce a confusion matrix to determine the model performance in the table below. As mentioned previously, we will be reviewing false positive rate, false negative rate, MMCE (model misclassification error) and ROC AUC.
+
 
 
 ```{r confusion_base, echo=FALSE, include=TRUE}
@@ -505,12 +558,12 @@ performance(spam.preds, measures=list(auc, mmce, fpr, fnr))
 ```
 
 
-To estimate general error and correction rates, we will be using MMCE and AUC as our KPIs on performance, as they generally indicate how well we are correctly classifying spam and valid emails. As a diagnostic measure, we will be looking at FPR and FNR to keep our models unbiased Looking at our confusion matrix above, we see that the performance is generally good on AUC, the model struggles with false negative rates. This means that we misclassified 91 spam observations of the 479  observations in our training set resulting in a false negative rate of nearly 19%. MMCE is also not particularly high at 9%. Our aim moving forward will be to improve using rpart's hyperparameters. 
+To estimate general error and correction rates, we will be using MMCE and AUC as our KPIs on performance, as they generally indicate how well we are correctly classifying spam and valid emails. As a diagnostic measure, we will be looking at FPR and FNR to keep our models unbiased Looking at our confusion matrix above, we see that the performance is generally good on AUC, the model struggles with false negative rates. This means that we misclassified 91 spam observations of the 479 observations in our training set resulting in a false negative rate of nearly 19%. MMCE is also not particularly high at 9%. Our aim moving forward will be to improve using rpart's hyperparameters.
 
 
 #### Hyperparameter Tuning
 
-To help improve our MMCE and FNR, we will make adjustments to our complexity parameter, minimum split, maximum depth and the splitting criterion. To avoid running the model over and over again and to lighten the code usage, we will be using a grid search procedure to test the rpart on various tuning combinations of our parameters. Below is a list of parameters we will be exploring. 
+To help improve our MMCE and FNR, we will adjust our complexity parameter, minimum split, maximum depth and the splitting criterion. To avoid running the model repeatedly and to lighten the code usage, we will be using a grid search procedure to test the rpart on various tuning combinations of our parameters. Below is a list of parameters we will be exploring. 
 
 Parameter Search Criteria
 *complexity parameter (cp) -0.001, 0.01, 0.1, 0.2, 0.5,
@@ -586,7 +639,7 @@ plotHyperParsEffect(data, x = "iteration", y = "auc.test.mean",
         text=element_text(size=12))
 ```
 
-The optimization procedure starts to maximize at about 0.97 of an AUC using our training data, and our optimized tree is much larger than our base model. With our plot above, we can see that we are using 50 to 100 total splits in our optimized tree. This is may be because our complexity penalty is lower than our optimized gridsearch threshold at (0.01). This may be causing an overfit to our test set.
+The optimization procedure starts to maximize at about 0.97 of an AUC using our training data, and our optimized tree is much larger than our base model. With our plot above, we can see that we are using 50 to 100 total splits in our optimized tree. This is may be because our complexity penalty is lower than our optimized grid search threshold at (0.01). This may be causing an overfit to our test set.
 
 ```{r tune_tree_plot, include=TRUE, echo=FALSE, fig.width=8.5, fig.height=4}
 # get the actual rpart model
@@ -596,9 +649,10 @@ prp(splits, 0, extra=1, roundint=FALSE)
 rpart.plot(splits,roundint=FALSE)
 ```
 
-Our resulting model generated an AUC score of >0.96 with a complexity of 0.001. Additionally, the maxdepth for the decision tree node is always >10. About half our models used the information splitting criterion and the majority of the models used a minsplit of 10 or more. Overall, our optimizations lean toward greater splitting and a medium node depth.
+Our resulting model generated an AUC score of >0.96 with a complexity of 0.001. Additionally, the maxdepth for the decision tree node is always >10. About half our models used the information splitting criterion and most of the models used a minsplit of 10 or more. Overall, our optimizations lean toward greater splitting and a medium node depth.
 
 The dominance of the complexity parameter is illustrated in the figure below. The higher AUC is related to a lower CP (or complexity parameter).
+
 
 ```{r cp_vs_minsplit, echo=FALSE, include=TRUE, fig.height=10, fig.width=8.5}
 # plot hyper parameter effects
@@ -732,7 +786,7 @@ qplot(x = fpr, y = tpr, color = learner, data = df$data, geom = "path")+
             text=element_text(size=12))
 ```
 
-In Fig. 12, it is apparent that our optimized rpart model outperformed the base rpart (with default parameters) with the greater AUC (blue line compared with the red line). Because the ROC AUC plot is the false positive rate versus the false negative rate, it is evident that the our optimized model most signficantly exceeds our base model is by reducing true negatives that were not apparent in the base model. 
+In Figure 12, it is apparent that our optimized rpart model outperformed the base rpart (with default parameters) with the greater AUC (blue line compared with the red line). Because the ROC AUC plot is the false positive rate versus the false negative rate, it is evident that the our optimized model most significantly exceeds our base model is by reducing true negatives that were not apparent in the base model.
 
 ```{r tune_feature importances}
 # which variables are most important?
@@ -758,17 +812,19 @@ Even though our optimized decision tree is complex, we still see some of the key
 
 ## Conclusion
 
-The Naive Bayes model was easy to implement and performed well on both the training and test sets. However, as an out of the box model it tells us little about what variables are of interest and due to our "kithcen sink" approach to variable selection it may fit the data set it came from very well but not genralize well as new data is introduced.  
+The Naive Bayes model was easy to implement and performed well on both the training and test sets. However, as an out of the box model it tells us little about what variables are of interest and due to our "kitchen sink" approach to variable selection it may fit the data set it came from very well but not generalize well as new data is introduced.  
 
 Through a detailed exploratory data analysis, rpart modeling, testing of various models and hyperparameter tuning, we were able to leverage rpart's baseline tuning to achieve a high AUC and a low misclassification rate, false positive rate, and true negative rate. We were then able to tune our parameters to achieve nearly a 96% accuracy in partitioning between spam and valid email messages. However, when we applied the same hyperparameter tunes that we found in our python modeling ensemble, we were not able to achieve the same results as our optimized grid search. We determined that the complexity penalty that we applied to our rpart plays a strong role in our optimized AUC score given our analysis. Using our optimized model, our partitioning was made up into a relatively complex (and difficult to read) rpart decision tree. 
 
-If we had a dataset that was more balanced between spam and valid emails, while also being large enough to parse between the number of decision tree combinations to effectively classify between spam and valid emails. Looking further into the decision thresholds and learning curves should help with optimizing the classification criteria and the training data to fit an optimal rpart model. 
+If we had a dataset that was more balanced between spam and valid emails, while also being large enough to parse between the number of decision tree combinations to effectively classify between spam and valid emails. Looking further into the decision thresholds and learning curves should help with optimizing the classification criteria and the training data to fit an optimal rpart model.
+
 
 ## Deployment
 
-The boundaries of what is considered “spam” is blurred based on different tolerance rates among users. Therefore a balance needs to be struck between being too lenient and just classifying commercial emails as spam, and too severe so that we are sending important emails to the junk folder. As the spam mailers are getting more savvy with dodging these algorithms used to detect spam while also being able to send messages en masse, this would mean that our algorithm would need to be constantly updated with new data to ensure that it’s detecting and learning from the latest trends and tactics. 
+The boundaries of what is considered “spam” is blurred based on different tolerance rates among users. Therefore, a balance needs to be struck between being too lenient and just classifying commercial emails as spam, and too severe so that we are sending important emails to the junk folder. As the spam mailers are getting more savvy with dodging these algorithms used to detect spam while also being able to send messages on masse, this would mean that our algorithm would need to be constantly updated with new data to ensure that it’s detecting and learning from the latest trends and tactics. 
 
-These findings don’t just have value for the email service providers, but also to email writers as well. Knowing the algorithms that email servers use to parse between spam and valid emails, will help marketers and users better craft their emails in ways that will get through the spam filters and reach their desired audiences. This would mean focusing on elements such as avoiding over capitalization and writing a long body email (using a lot of characters) that will look more valid to email filters. 
+These findings don’t just have value for the email service providers, but also to email writers as well. Knowing the algorithms that email servers use to parse between spam and valid emails, will help marketers and users better craft their emails in ways that will get through the spam filters and reach their desired audiences. This would mean focusing on elements such as avoiding over capitalization and writing a long body email (using a lot of characters) that will look more valid to email filters.
+
 
 ## References
 
