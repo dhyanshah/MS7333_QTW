@@ -15,8 +15,9 @@ output:
     fig_retina: true
 ---
 
-Load the libraries
+
 ```{r libraries, include = FALSE, cache=TRUE, echo=FALSE}
+#Load the libraries
 library(magrittr)
 library(reshape2)
 library(plyr)
