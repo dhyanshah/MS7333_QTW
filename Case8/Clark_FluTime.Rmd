@@ -1,0 +1,59 @@
+---
+title: "Case Assignment 4 - Flu Analysis"
+author: "Daniel Clark"
+date: "6/23/2020"
+output: html_document
+---
+
+```{r loadlibraries}
+library(tswge)
+```
+
+```{r, load data}
+flu_tidy = read.csv("https://raw.githubusercontent.com/dhyanshah/MS7333_QTW/master/Case8/flu_tidy.csv")
+
+summary(flu_tidy)
+```
+
+The dataframe covers from the first week of 2017 through to the 23rd week of 2020, or through the start of June, 2020. 
+
+```{r, load data}
+plotts.wge(flu_tidy$Positive)
+plotts.sample.wge(flu_tidy$Positive)
+
+plotts.wge(flu_tidy$Negative)
+plotts.sample.wge(flu_tidy$Negative)
+```
+Here we can see there is a stationary pattern emerging from both our instances of positive cases and negative tests, it appears that thye are happening consistently during the winter season each year, which makes sense as that time frame typically correlates with flue season each year. 
+
+Both Spectral Densities suggest there's a wandering behavior outside of the spikes which are not super apparent visually, but we can see a hint of them at around .15 and .4 on both positive and negative plots. 
+
+```{r aic5}
+aic5.wge(flu_tidy$Positive, p = 0:15, q = 0:15)
+aic5.wge(flu_tidy$Negative, p = 0:15, q = 0:15)
+```
+
+Next, we will begin to work on finding out which model is going to give us the best fit for forecasting positive cases in the future. Looking at our instances of positive cases, the most favored model with respect to AIC is an AR(7) model which has an AIC score of 14.162, folled by an ARMA (2,7) model with an AIC of 14.6889. Looking down our list, we can't seem to find an instance that achieves a high arma score and uses less than 7 phis and theta's combined, so we will focus on the AR(7) as the ideal. 
+
+The positive instances is even more complex with the smallest model having 11 phi's and thetas. 
+
+Considering, visually, we have a large seasonality associated with our positive tests, so let's see if we can reduce the impact of it.
+
+```{r artrans}
+seasdif = artrans.wge(flu_tidy$Positive, c(rep(0,51),1))
+parzen.wge(seasdif)
+aic5.wge(seasdif)
+plotts.sample.wge(seasdif)
+```
+
+Accounting for the weekly seasonaility by running ar trans on the weekly data we have over 3 years, we can see that we have a smoothe spectral density and a realization that relies less on on the 4 seasonal factors in the winter and shows more of the change in demand year over year.
+
+```{r forecast}
+flufore1 = fore.aruma.wge(flu_tidy$Positive, s = 52, n.ahead = 45, lastn = TRUE)
+ase1 = mean(((flufore1$f - flu_tidy$Positive[135:179])))
+ase1
+
+flufore2 = fore.aruma.wge(seasdif, s = 52, n.ahead = 45, lastn = TRUE)
+ase2 = mean(((flufore2$f - flu_tidy$Positive[135:179])))
+ase2
+```
