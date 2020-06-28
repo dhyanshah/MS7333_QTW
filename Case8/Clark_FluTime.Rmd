@@ -7,6 +7,12 @@ output: html_document
 
 ```{r loadlibraries}
 library(tswge)
+library(doParallel)
+registerDoParallel(cores=16)
+library(nnfor)
+library(tswge)
+library(forecast)
+library(vars)
 ```
 
 ```{r, load data}
@@ -15,7 +21,7 @@ flu_tidy = read.csv("https://raw.githubusercontent.com/dhyanshah/MS7333_QTW/mast
 summary(flu_tidy)
 ```
 
-The dataframe covers from the first week of 2017 through to the 23rd week of 2020, or through the start of June, 2020. 
+For this study, we are choosing to forecast flu cases in the United States region. The data covers from the first week of 2017 through to the 23rd week of 2020, or rather through the start of June, 2020. 
 
 ```{r, load data}
 plotts.wge(flu_tidy$Positive)
@@ -24,16 +30,18 @@ plotts.sample.wge(flu_tidy$Positive)
 plotts.wge(flu_tidy$Negative)
 plotts.sample.wge(flu_tidy$Negative)
 ```
-Here we can see there is a stationary pattern emerging from both our instances of positive cases and negative tests, it appears that thye are happening consistently during the winter season each year, which makes sense as that time frame typically correlates with flue season each year. 
+Here we can see that there is a stationary pattern emerging from both our instances of positive cases and negative tests, it appears that they are happening consistently during the winter season each year, which makes sense as that time frame typically correlates with flu season each year. 
 
 Both Spectral Densities suggest there's a wandering behavior outside of the spikes which are not super apparent visually, but we can see a hint of them at around .15 and .4 on both positive and negative plots. 
+
+
 
 ```{r aic5}
 aic5.wge(flu_tidy$Positive, p = 0:15, q = 0:15)
 aic5.wge(flu_tidy$Negative, p = 0:15, q = 0:15)
 ```
 
-Next, we will begin to work on finding out which model is going to give us the best fit for forecasting positive cases in the future. Looking at our instances of positive cases, the most favored model with respect to AIC is an AR(7) model which has an AIC score of 14.162, folled by an ARMA (2,7) model with an AIC of 14.6889. Looking down our list, we can't seem to find an instance that achieves a high arma score and uses less than 7 phis and theta's combined, so we will focus on the AR(7) as the ideal. 
+Next, we will begin to work on finding out which model is going to give us the best fit for forecasting positive cases in the future. Looking at our instances of positive cases, the most favored model with respect to AIC is an AR(7) model which has an AIC score of 14.162, followed by an ARMA (2,7) model with an AIC of 14.6889. Looking down our list, we can't seem to find an instance that achieves a high arma score and uses less than 7 phis and theta's combined, so we will focus on the AR(7) as the ideal. 
 
 The positive instances is even more complex with the smallest model having 11 phi's and thetas. 
 
@@ -46,7 +54,7 @@ aic5.wge(seasdif)
 plotts.sample.wge(seasdif)
 ```
 
-Accounting for the weekly seasonaility by running ar trans on the weekly data we have over 3 years, we can see that we have a smoothe spectral density and a realization that relies less on on the 4 seasonal factors in the winter and shows more of the change in demand year over year.
+Accounting for the weekly seasonaility by running differencing on 52 weeks, we can see that we have a smoothe spectral density and a realization that relies less on on the 4 seasonal factors in the winter and shows more of the change in demand year over year.
 
 ```{r forecast}
 flufore1 = fore.aruma.wge(flu_tidy$Positive, s = 52, n.ahead = 45, lastn = TRUE)
@@ -57,3 +65,39 @@ flufore2 = fore.aruma.wge(seasdif, s = 52, n.ahead = 45, lastn = TRUE)
 ase2 = mean(((flufore2$f - flu_tidy$Positive[135:179])))
 ase2
 ```
+
+Lets try a nueral model.
+
+```{r nueral}
+flu_train = ts(flu_tidy$Positive[1:153], start = c(2017,1),frequency = 52)
+nonflu_train = ts(flu_tidy$Negative[1:153], start = c(2017,1),frequency = 52)
+flu_test = ts(flu_tidy$Positive[154:179], start = c(2019,49),frequency = 52)
+nonflu_test = ts(flu_tidy$Negative[154:179], start = c(2019,49),frequency = 52)
+#set.seed(255)
+fit.mlp= mlp(flu_train, lags=1:52, hd.auto.type="valid",hd.max=10)
+fit.mlp
+plot(fit.mlp)
+
+```
+
+
+
+```{r forecast-nueral}
+h=26
+frc <- forecast(fit.mlp,h=h)
+plot(frc)
+frc
+ASE.mlp = mean((flu_test-frc$mean)^2)
+ASE.mlp
+
+# Plotting Forecast vs actual for MLP
+plot(flu_tidy$Positive, type = "l",
+     main='Flu Rates',
+     xlab="Week"
+     ,ylab="Cases")
+lines(seq(153,178,1),frc$mean,col = "blue")
+#axis(1, at=1:37, labels=seq(1936,1972,1),las=2)
+legend(26, 3, legend=c("MLP Forecast", 'Actual'),
+       col=c("green", 'black'), lty=1, cex=0.9)
+```
+
