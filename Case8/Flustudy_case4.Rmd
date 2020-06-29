@@ -1,9 +1,20 @@
 ---
-title: "FlueStudy_Case4"
-author: "Daniel Clark"
-date: "6/27/2020"
-output: html_document
+title: "United States Flu Study - Case Study: Arellano, Clark, Shah, Vaughn"
+author: "Samuel Arellano, Daniel Clark, Dhyan Shah, Chandler Vaughn"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    number_sections: true
+    theme: united
+    highlight: haddock
+    df_print: paged
+    keep_md: TRUE
+    fig_width: 10
+    fig_height: 10
+    fig_retina: true
 ---
+
 
 ```{r library load}
 library(ggplot2)
@@ -383,7 +394,7 @@ bjase2
 bjase1
 bjase2
 ```
-Looking at the Yule Walker Approach, we can see that we didn not see improvement. 
+Looking at the Yule Walker Approach, we can see that we did not see improvement. 
 
 
 Now lets try a neural model to see if we can improve. 
@@ -395,8 +406,8 @@ flu_train = ts(fluDf$Positive[1:153], start = c(2017,1),frequency = 52)
 nonflu_train = ts(fluDf$Negative[1:153], start = c(2017,1),frequency = 52)
 flu_test = ts(fluDf$Positive[154:179], start = c(2019,49),frequency = 52)
 nonflu_test = ts(fluDf$Negative[154:179], start = c(2019,49),frequency = 52)
-#set.seed(255)
-fit.mlp= mlp(flu_train, lags=1:52, hd.auto.type="valid",hd.max=10)
+set.seed(255)
+fit.mlp= mlp(flu_train, lags=1:52, hd.auto.type="cv", hd.max=20, reps=500)
 fit.mlp
 plot(fit.mlp)
 ```
@@ -410,6 +421,8 @@ plot(frc)
 frc
 ASE.mlp = mean((flu_test-frc$mean)^2)
 ASE.mlp
+bjase3 = mean(((frc$mean-flu_test)))
+bjase3
 # Plotting Forecast vs actual for MLP
 plot(flu_tidy$Positive, type = "l",
      main='Flu Rates',
@@ -420,3 +433,38 @@ lines(seq(153,178,1),frc$mean,col = "blue")
 legend(26, 3, legend=c("MLP Forecast", 'Actual'),
        col=c("green", 'black'), lty=1, cex=0.9)
 ```
+```{r elm}
+fit <- elm(flu_train, m=52, difforder=c(1,52), comb= "mean", reps=1000, type = c("lasso", "ridge", "step", "lm"))
+print(fit)
+plot(fit)
+frc<-forecast(fit,h=26)
+bjase4 = mean(((frc$mean-flu_test)))
+bjase4
+
+# Plotting Forecast vs actual for ELM
+plot(flu_tidy$Positive, type = "l",
+     main='Flu Rates',
+     xlab="Week"
+     ,ylab="Cases")
+lines(seq(153,178,1),frc$mean,col = "blue")
+#axis(1, at=1:37, labels=seq(1936,1972,1),las=2)
+legend(26, 3, legend=c("MLP Forecast", 'Actual'),
+       col=c("green", 'black'), lty=1, cex=0.9)
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

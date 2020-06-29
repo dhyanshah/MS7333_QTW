@@ -23,7 +23,7 @@ summary(flu_tidy)
 
 For this study, we are choosing to forecast flu cases in the United States region. The data covers from the first week of 2017 through to the 23rd week of 2020, or rather through the start of June, 2020. 
 
-```{r, load data}
+```{r, load data2}
 plotts.wge(flu_tidy$Positive)
 plotts.sample.wge(flu_tidy$Positive)
 
