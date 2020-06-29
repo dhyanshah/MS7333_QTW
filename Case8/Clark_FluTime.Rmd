@@ -74,7 +74,7 @@ nonflu_train = ts(flu_tidy$Negative[1:153], start = c(2017,1),frequency = 52)
 flu_test = ts(flu_tidy$Positive[154:179], start = c(2019,49),frequency = 52)
 nonflu_test = ts(flu_tidy$Negative[154:179], start = c(2019,49),frequency = 52)
 #set.seed(255)
-fit.mlp= mlp(flu_train, lags=1:52, hd.auto.type="valid",hd.max=10)
+fit.mlp= mlp(flu_train, lags=1:52, hd.auto.type="valid",hd.max=20, reps=1000)
 fit.mlp
 plot(fit.mlp)
 
@@ -100,4 +100,5 @@ lines(seq(153,178,1),frc$mean,col = "blue")
 legend(26, 3, legend=c("MLP Forecast", 'Actual'),
        col=c("green", 'black'), lty=1, cex=0.9)
 ```
+
 
