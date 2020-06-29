@@ -1,0 +1,422 @@
+---
+title: "FlueStudy_Case4"
+author: "Daniel Clark"
+date: "6/27/2020"
+output: html_document
+---
+
+```{r library load}
+library(ggplot2)
+library(tswge)
+library(ggplot2)
+library(ggthemes)
+library(forecast)
+library(tseries)
+library(lubridate)
+library(datetime)
+library(caret)
+library(corrplot)
+library(DMwR)
+library(Hmisc)
+library(ROCR)
+library(stringr)
+library(RVAideMemoire)
+#install.packages("plotly")
+library(plotly)
+#install.packages('TSstudio')
+library(TSstudio)
+library(doParallel)
+registerDoParallel(cores=16)
+library(nnfor)
+library(vars)
+```
+
+```{r data load}
+getwd()
+#fluDf = read.csv(file.choose(),header = TRUE)
+#fluDf = read.csv("/Volumes/Dhyan-MacPC/Education/SMU /MSDS/DS 7333 Quantifying the World/Unit 8 - Case Study/flu_tidy.csv")
+fluDf = read.csv("https://raw.githubusercontent.com/dhyanshah/MS7333_QTW/master/Case8/flu_tidy.csv")
+
+
+head(fluDf)
+dim(fluDf)
+summary(fluDf)
+```
+
+Running a quick summary of our data frame, we can see that our model is running from the first week of 2017 through June of 2020. The dataset includes 5 columns that denote the time frame that we are specifically targeting in our study. Additionally, we have columns that call out the number of positive and negative tests that were administered during the week of study. From a positive standpoint, we are maxing out at 30k total positives with a min of 24, so we have a pretty large range that we are working with. Among positive tests, the median is at 1,601 while the mean is at 6,500, which suggests our positive tests are right skeweed. 
+
+Among our negative tests, we can see that our median and mean values per week are much closer, which shows that the negative data set is more normal than our positive tests dataset. 
+
+### Exploratory Data Analysis
+
+## Week Year Review
+
+```{r weekyear}
+fig1 <- plot_ly(fluDf, x = ~Positive, y = ~week.year, name = "Positive", type = 'scatter',
+               mode = "markers", marker = list(color = "pink"))
+fig1 <- fig1 %>% add_trace(x = ~Negative, y = ~week.year, name = "Negative",type = 'scatter',
+                         mode = "markers", marker = list(color = "blue"))
+fig1 <- fig1 %>% layout(
+  title = "Flu Cases",
+  xaxis = list(title = "Number of Cases"),
+  margin = list(l = 100)
+)
+
+fig1
+```
+
+Reviewing the number of flu cases among our years' data assigned to the week number throughout the year, we can see that the number of cases spike more heavily during the early months and later months of the year, which would coincide during the winter months throughout the year. This makes sense as we would expect the colder weather to have a higher correlation with instances of the flu.
+
+During the middle months out of the year, the number of flu instances drop almost to zero particularly from week 20 through week 40. This also, makes sense as the warmer weather summer months, are better correlated to lower instances of the flu. 
+
+## Year Review
+
+```{r year review}
+fig2 <- plot_ly(fluDf, x = ~Positive, y = ~year, name = "Positive", type = 'scatter',
+                mode = "markers", marker = list(color = "pink"))
+fig2 <- fig2 %>% add_trace(x = ~Negative, y = ~year, name = "Negative",type = 'scatter',
+                           mode = "markers", marker = list(color = "blue"))
+fig2 <- fig2 %>% layout(
+  title = "Flu Cases",
+  xaxis = list(title = "Number of Cases"),
+  margin = list(l = 100)
+)
+
+fig2
+```
+
+The plot above provides a visual of 2d scatter plots of our year in review, as well as the number of instances of positive and negative tests per week. From 2017 to 2019, the dots for the positive tests leaned more on the lower end of the spectrum, while the negative tests are on the higher end of the spectrum. This would indicate that during those 3 years, the proportion of positive tests is much lower than the instances of negative tests. 
+
+For the 2020 data specifically, we see much more overlap between the positive and negative weeks for weeks the number of results were lower than 40k. This is likely due to the fact that our time frame of the research study ran between Jan through the end of May, and we have equal numbers of months where we have cold weather and warm weather during that time of the year. 
+
+```{r cases}
+fig3 <- plot_ly(data = fluDf, x = ~Positive, y = ~Negative,
+               marker = list(size = 10,
+                             color = ~year,
+                             line = list(color = ~year,
+                                         width = 2)))
+fig3 <- fig3 %>% layout(title = 'Flu Cases',
+                      yaxis = list(zeroline = FALSE),
+                      xaxis = list(zeroline = FALSE))
+
+fig3
+```
+
+Combining the years and number of cases, we provided a scatter chart that shows the relationship of the number of positive cases and negative cases denoted by year. The first thing we can see is that we never have a week where the number of positive cases exceed the number of negative cases. Additionally, we can see there are a couple of interesting outliers that appear in the upper left corner. However, these cases would reflect instances where we likely saw a higher number of tests took place. 
+
+```{r barchart}
+fig4 <- plot_ly(fluDf, x = ~year, y = ~Positive, type = 'bar', name = 'Positive')
+fig4 <- fig4 %>% add_trace(y = ~Negative, name = 'Negative')
+fig4 <- fig4 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+
+fig4
+
+
+
+fig5 <- plot_ly(fluDf, x = ~week, y = ~Positive, type = 'bar', name = 'Positive')
+fig5 <- fig5 %>% add_trace(y = ~Negative, name = 'Negative')
+fig5 <- fig5 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+
+fig5
+```
+
+Looking further into the ratio of negative tests with positive tests, we can see that among the three yearsof data we have available, we can see that roughly 20% of our tests are coming out positive in the first 3 full years of our research study. This can prove handy in our forecast for Q3 and Q4 of 2020 when we are going to want to ensure our forecast normalizes for the continued warm months and ramps up in the cold months of Q4. 
+
+Reviewing our monthly data in the plot above, we can see that our 20% ratio is not consistent in each month and that we see ranges from nearly 0% to nearly 40-50%, so our forecasting model will need to account for this if we want to accurately predict Q3 and Q4. 
+
+```{r case markers}
+fig6 <- plot_ly(
+  type = "scatter",
+  x = fluDf$year, 
+  y = fluDf$Positive,
+  name = 'Positive FLu Cases',
+  mode = "markers",
+)
+fig6 <- fig6 %>%
+  layout(
+    title = "Flu Cases",
+    xaxis = list(
+      type = "Year"
+    )
+  )
+fig6
+```
+
+Going back to our 2d scatter plot of just positive cases, broken out by year, we can see that we have some inconsistentyc with the number of positive outcomes that appear int he given years. For 2017 and 2018, we can see the peak is generally under 20k with a single outlier above. For the positive cases in 2018 and 2020, we can see there are much more weeks where we had more than 20k positive flu cases. 
+
+### Flu Cases Forecasting
+
+```{r forecast}
+#all data
+plotts.wge(fluDf$Positive)
+plotts.wge(fluDf$Negative)
+
+plotts.sample.wge(fluDf$Positive)
+plotts.sample.wge(fluDf$Negative)
+```
+
+Starting with the initial step of our time series analysis, we decided to compare the realization plots, auto correlation plots, periodogram plots and spectral density plots for both the positve and negative cases. See below for a quick overview of what each plot and what they tell us. 
+
+* Realization plot - Provides a raw view of a response variable chonologically over a period of time. 
+* Autocorrelation Function Plot (ACF) - Provides a view of the correlation a point in the time series has with the points adjacent to it. 
+* Frequency periodogram - Provides a view of the values that appear in a cyclic manner and plots where you can expect to see high frequency points and low frequency points with respect to the time frame your analyzing. 
+* Parzen Window (Spectral Density) - The parzen window provides a similar view as the periodogram, but also provides some more insight to the specific frequency peaks which we can accurately measure. Additionally, a Parzen window provides some detail on the wandering nature of the data, as well as the change in variance over time. 
+
+On the instance of positive tests, we can see that there are 4 major cyclic peaks within our realization, which is reflected in the spike at 0.2. Additionally, we can see evidence of spikes at 0.05 and 0.3 and 0.4 which we can unpack further. 
+
+Looking at the negative data, we can see that the valleys between our peaks on the positive instances is less pronounced with a smoother regression. This was reflected in our parzen witndown with a little smoother view of the density peaks. 
+
+```{r last year}
+#truncated to last year
+plotts.sample.wge(fluDf$Positive[0:100])
+plotts.sample.wge(fluDf$Positive[100:175])
+#truncated to 6 months 
+plotts.sample.wge(fluDf$Negative[0:100])
+plotts.sample.wge(fluDf$Negative[100:175])
+
+length(fluDf$Positive[1:100]) 
+length(fluDf$Negative[1:100]) 
+
+acf(fluDf$Positive[1:100])
+acf(fluDf$Negative[1:100])
+```
+
+Looking specifically at the first half of our datset along with the second half, we can see that our ACF functions look to be relatively consistent no matter where you are in the plot. This is importnant when you are looking for our time series to apply to the concept of stationarity, which requires the following criteria.
+
+* Consistent mean throughout the time frame
+* Consistent variance throughout the tiem frame
+* Autocorrelations are independent of where you are in time. 
+
+In the plots above (particularly the view of the second half acfs compared to the first), we can see that we have very similar looking plots, this would mean that our positive instances variable is meeting the third criteria of our stationary requirement. 
+
+#### Time Series Modeling
+
+
+```{r aics}
+aic5.wge(fluDf$Positive,p=0:15,q=0:12,type = 'bic')
+
+#Five Smallest Values of  bic 
+#p    q        bic
+#92     7    0   14.30477
+#32     2    5   14.31919
+#105    8    0   14.33046
+#80     6    1   14.33107
+#93     7    1   14.33112
+
+aic5.wge(fluDf$Positive,p=0:15,q=0:12,type = 'aic')
+
+#Five Smallest Values of  aic 
+#p    q        aic
+#92     7    0   14.16232
+#34     2    7   14.16889
+#105    8    0   14.17020
+#93     7    1   14.17086
+#32     2    5   14.17674
+
+aic5.wge(fluDf$Negative,p=0:12,q=0:12,type = 'bic')
+
+#Five Smallest Values of  bic 
+#p    q        bic
+#27    2    0   15.92028
+#28    2    1   15.94886
+#40    3    0   15.94888
+#16    1    2   15.96290
+#79    6    0   15.96787
+
+aic5.wge(fluDf$Negative,p=0:12,q=0:12,type = 'aic')
+
+#Five Smallest Values of  aic 
+#p    q        aic
+#84     6    5   15.78323
+#157   12    0   15.81752
+#86     6    7   15.81909
+#158   12    1   15.82814
+#144   11    0   15.83928
+```
+
+As we move forward into the fitting of our model to forecast future demand for flu treatment products, we first need to look into possible model frameworks that would be preferred for us to use in our final forecast model. Here we will use the Akaike information criterion as our key performance indicator for the best model (we will be looking for the lowest AIC score). The AIC is an estimator of out-of-sample prediction error, and thus the relative quality of our statistical models for a given set of parameters. 
+
+Our output of the AIC score will be a preferred combination of Ps and Qs to use as the framework of our final model fit. The Ps represent the Autoregression score, which indicates which observations from previous models can be input into a regression equation. The Qs represent the moving average model, which specifies how the output variable depends linearly on the current and previous values. The combination of Ps and Qs in our final model fit is known as an "ARMA" model. 
+
+Here, to help keep our models from being too computationally intense, we will start with a test of an AIC score using Ps and Qs of less than 15 for the P and 12 for the Qs.
+
+After testing various combinations of ARMA models, we can see that our AIC prefers an AR(7) model most of all with the low AIC score of 14.16 for the positive data, and an ARMA (6,5) model for the negative data. 
+
+### Estimate Model Parameters
+
+```{r model estimate parameters}
+e1 = est.arma.wge(fluDf$Positive, p=7, q=0)
+e1
+mean(fluDf$Positive)
+
+e2 = est.arma.wge(fluDf$Negative, p=6, q=5)
+e2
+mean(fluDf$Positive)
+```
+
+So that we can actually build a model using our AR(7) and ARMA(6,5) framework, we will use the maximum likelihood estimate to provide us the phis and thetas to help us build a model. A maximum likelihood estimation method is a probability distribution that maximizes a likelihood function to help us detirmine the best probability parameters for our fit. 
+
+For our Positive Dataset, we can see that the respective phis for our AR(7) model is 1.76405274 -0.88142813 -0.06765031  0.17643910  0.37028688 -0.65347541  0.23814701. This gives us the model below:
+
+1-1.76B^2 + 0.88B^3 + 0.067B^4 - 0.18B^5 - 0.37B^6 + 0.65B^7 - 0.24B^8 = a_t
+
+For our Negative Dataset, we can see the respective phis for our ARMA(6,5) model are 1.8428774 -0.8968270 -0.6407014  1.5967127 -1.0525593  0.1229353, and our respective thetas are 0.45129414  0.24224825 -0.53596162  0.75762713  0.08476119. This gives us the model below: 
+
+(1-1.84B^2 + 0.89B^3 + 0.64B^4 - 1.6B^5 + 1.05B^6 - 0.122B^7)X_t = -0.45a_t^2 - 0.24a_t^3 + 0.54a_t^4 - 0.76a_t^5 - 0.08a_t^6
+
+Now lets look into the Seasonality of these models. 
+
+#### Differences
+
+```{r first difference model}
+## Positive ## 
+
+s1 = artrans.wge(fluDf$Positive, c(rep(0,11),1))
+parzen.wge(s1)
+aic5.wge(s1)
+plotts.sample.wge(s1)
+
+
+s2 = artrans.wge(fluDf$Positive, c(rep(0,51),1))
+parzen.wge(s2)
+aic5.wge(s2)
+plotts.sample.wge(s2)
+
+## Negative ## 
+
+s3 = artrans.wge(fluDf$Negative, c(rep(0,11),1))
+parzen.wge(s3)
+aic5.wge(s3)
+plotts.sample.wge(s3)
+
+
+s3 = artrans.wge(fluDf$Negative, c(rep(0,51),1))
+parzen.wge(s3)
+aic5.wge(s3)
+plotts.sample.wge(s3)
+```
+
+Considering, visually, we have a large seasonality associated with our positive tests, so let's see if we can reduce the impact of it by adjusting for the weekly and monthly cyclic behavior in the data. 
+
+Accounting for the weekly seasonaility by running ar trans on the weekly data we have over 3 years, we can see that we have a smoothe spectral density and a realization that relies less on on the 4 seasonal factors in the winter and shows more of the change in demand year over year. Comparing the monthly with the weekly seasonality data, we can see that we have an improved aic score on the weekly data. This makes sense as our dataset is broken out in week long intervals. 
+
+Regarding the negative instances, we can see that our weekly seasonality model has the lower AIC score  and a smoother spectral density plot. That said, it doesn't improve our AIC score, so we will will not difference the data before moving forward. 
+
+### Forecast
+
+```{r forecast}
+f1 = fore.aruma.wge(fluDf$Positive, phi = c(1.76405274, -0.88142813, -0.06765031,  0.17643910,  0.37028688, -0.65347541,  0.23814701),  s=52, n.ahead = 45, lastn = TRUE)
+ase1 = mean(((f1$f-fluDf$Positive[135:179])))
+ase1
+
+
+f2 = fore.aruma.wge(fluDf$Negative, phi = c(1.8428774, -0.8968270, -0.6407014,  1.5967127, -1.0525593,  0.1229353), theta = c(0.45129414,  0.24224825, -0.53596162,  0.75762713,  0.08476119), s=52, n.ahead = 45, lastn = TRUE)
+ase2 = mean(((f2$f-fluDf$Negative[135:179])))
+ase2
+
+
+f1 = fore.aruma.wge(fluDf$Positive, phi = c(1.76405274, -0.88142813, -0.06765031,  0.17643910,  0.37028688, -0.65347541,  0.23814701), s=26, n.ahead = 13, lastn = TRUE)
+ase1 = mean(((f1$f-fluDf$Positive[154:179])))
+ase1
+
+
+f2 = fore.aruma.wge(fluDf$Negative, phi = c(1.8428774, -0.8968270, -0.6407014,  1.5967127, -1.0525593,  0.1229353), theta = c(0.45129414,  0.24224825, -0.53596162,  0.75762713,  0.08476119), s=26, n.ahead = 13, lastn = TRUE)
+ase2 = mean(((f2$f-fluDf$Negative[154:179])))
+ase2
+```
+
+Now that we have our models and have addressed the seasonality phenomenon with regards to the spike that we see in our positive and negative instances dataset, we will want to begin to forecast the future diagonsises of the flu so that we can mobilize resources to best serve the need in the winter of Q4. In order to ensure that we are best forecasting future data without actuals to measure the accuracy against, we will need to look in the past to see if we can use our model to best predict the most recent 9 months of data. 
+
+In order to do this, we will create a prediction based on 2017 through the first half of 2019 data, and we will overlay that with the actual data that occured from September 2019 through June 2020. From there, we will test the difference between our predicted value and the respective actuals aggregated over the 45 week window and use the Average Squared Error score to evaluate performance. 
+
+And then we will look to use a bi-weekly seasonality model to which we are looking to predict the next 13 weeks of data. Doing so for both Positive and Negative Results. 
+
+
+After running the model, we can see that our weekly seasonality forecast best performs our bi-weekly seasonality. From there, we can see that our ASE for the Positve cases is -1788.444 and negative cases is -3669.4. 
+
+Now lets run a Burg Model to see if we can improve on our AIC scores. 
+
+### Burg Model
+
+```{r model estimate parameters}
+be1 = est.ar.wge(fluDf$Positive, p=7, type = 'burg')
+be1
+mean(fluDf$Positive)
+
+#be2 = est.arma.wge(fluDf$Negative, p=6, q=5, type = 'burg')
+#be2
+#mean(fluDf$Positive)
+```
+Note that the Burg model only works on AR models, so we won't be able to use it on the ARMA (6,5) negative data. Doing so, we get a model parameter series of phi = (1.76613344 -0.88202450 -0.06256226  0.16666095  0.38071794 -0.66334254  0.24216554) which is slightly different from the MLE model we ran previously. 
+
+Next we will check it against our ASE score. 
+
+```{r forecast burg}
+bf1 = fore.aruma.wge(fluDf$Positive, phi = c(1.76613344, -0.88202450, -0.06256226, 0.16666095, 0.38071794, -0.66334254,  0.24216554),  s=52, n.ahead = 45, lastn = TRUE)
+base1 = mean(((bf1$f-fluDf$Positive[135:179])))
+base1
+
+
+bf1 = fore.aruma.wge(fluDf$Positive, phi = c(1.76613344, -0.88202450, -0.06256226, 0.16666095, 0.38071794, -0.66334254,  0.24216554), s=26, n.ahead = 13, lastn = TRUE)
+base2 = mean(((bf1$f-fluDf$Positive[154:179])))
+base2
+```
+After running a burg estimation, we did not see an improvement in our ASE score to predict our 52 week model accuratley, but we did see a positive result in predicting the bi-weekly report accurately.
+
+Now lets try the Yule Walker estimate approach.
+
+```{r Yule walker}
+bje1 = est.ar.wge(fluDf$Positive, p=7, type = 'yw')
+bje1
+mean(fluDf$Positive)
+
+bjf1 = fore.aruma.wge(fluDf$Positive, phi = bje1$phi,  s=52, n.ahead = 45, lastn = TRUE)
+bjase1 = mean(((bjf1$f-fluDf$Positive[135:179])))
+bjase1
+
+
+bjf2 = fore.aruma.wge(fluDf$Positive, phi = bje1$phi, s=26, n.ahead = 13, lastn = TRUE)
+bjase2 = mean(((bjf2$f-fluDf$Positive[154:179])))
+bjase2
+```
+```{r yw result}
+bjase1
+bjase2
+```
+Looking at the Yule Walker Approach, we can see that we didn not see improvement. 
+
+
+Now lets try a neural model to see if we can improve. 
+
+#### Neural Forecast
+
+```{r forecast model}
+flu_train = ts(fluDf$Positive[1:153], start = c(2017,1),frequency = 52)
+nonflu_train = ts(fluDf$Negative[1:153], start = c(2017,1),frequency = 52)
+flu_test = ts(fluDf$Positive[154:179], start = c(2019,49),frequency = 52)
+nonflu_test = ts(fluDf$Negative[154:179], start = c(2019,49),frequency = 52)
+#set.seed(255)
+fit.mlp= mlp(flu_train, lags=1:52, hd.auto.type="valid",hd.max=10)
+fit.mlp
+plot(fit.mlp)
+```
+
+
+
+```{r forecast neural}
+h=26
+frc <- forecast(fit.mlp,h=h)
+plot(frc)
+frc
+ASE.mlp = mean((flu_test-frc$mean)^2)
+ASE.mlp
+# Plotting Forecast vs actual for MLP
+plot(flu_tidy$Positive, type = "l",
+     main='Flu Rates',
+     xlab="Week"
+     ,ylab="Cases")
+lines(seq(153,178,1),frc$mean,col = "blue")
+#axis(1, at=1:37, labels=seq(1936,1972,1),las=2)
+legend(26, 3, legend=c("MLP Forecast", 'Actual'),
+       col=c("green", 'black'), lty=1, cex=0.9)
+```
