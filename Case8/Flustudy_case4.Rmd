@@ -16,6 +16,10 @@ output:
 ---
 
 
+# Introduction
+
+With infectious diseases taking the forefront of our news, culture and daily life, it’s more important than ever for drug and treatment companies to stay on top of the trends with the spread of disease to ensure they are meeting the resource needs. For cases like the flu, which has a direct seasonal spike around winter in the United States, it is critical to be able to predict these spikes accurately so you can best plan and serve your customers. In this study, we will look at data from the CDC spanning from 2017 through to 2020 that outlines the positive and negative cases of flu screenings in the U.S. We will explore some of the trends that occurred with historical data and use that to predict future flu cases more than 45 weeks out. 
+
 ```{r library load}
 library(ggplot2)
 library(tswge)
@@ -433,6 +437,9 @@ lines(seq(153,178,1),frc$mean,col = "blue")
 legend(26, 3, legend=c("MLP Forecast", 'Actual'),
        col=c("green", 'black'), lty=1, cex=0.9)
 ```
+
+Our Neural Model Helped us generate an ASE score of -11844 which is not nearly as good as our MLE model.
+
 ```{r elm}
 fit <- elm(flu_train, m=52, difforder=c(1,52), comb= "mean", reps=1000, type = c("lasso", "ridge", "step", "lm"))
 print(fit)
@@ -456,13 +463,17 @@ legend(26, 3, legend=c("MLP Forecast", 'Actual'),
 
 
 ```
+Next, we will perform an ELM function which is a Single Hidden Layer Feedforward Nueral Net. Standing for Extreme Learning Machine algorithm (ELM), it randomly generates weights with no gradient-based backpropagation. What this means is that it can create a much more complex neural net than our mlp forecast net, which should allow us to create a better prediction of flu cases at the end of 2020. 
+
+Visually, we can see that it pretty closely traces our historical data with our line much better than our MLE, MLP, Yule Walker and Burg estimation. 
 
 
 
 
 
+Resources:
 
-
+https://cran.r-project.org/web/packages/ELMR/ELMR.pdf
 
 
 
