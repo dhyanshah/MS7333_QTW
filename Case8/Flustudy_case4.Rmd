@@ -15,6 +15,9 @@ output:
     fig_retina: true
 ---
 
+### Abstract
+
+As the world adjusts to a new normal of illness prevention and caution towards viral infections, the microscope for drug and treatment companies gets larger and larger to be able to produce and supply medicines and equipment to meet the resource needs of the population. In our study, we looked into weekly cases of positive and negative test results for influenza, or most commonly known as the flu. Our dataset traced back to 2017 through June of 2020 and saw a cyclic behavior of spikes around the Q4 - Q1 season each year, or when weather is cold in the northern hemisphere. We ran a series of models using Maximum Likelihood Estimation, Burg, Yule Walker, Extreme Learning Machine, and Multi-layer Perceptron to forecast the next 45 days of flu cases. After checking through 26 and 52 week horizons, we were able to accurately predict historical forecasts and provide a roadmap to meet the demand for flu treatments in Q4 - Q1 of 2020/2021.
 
 # Introduction
 
@@ -67,6 +70,13 @@ summary(fluDf)
 Running a quick summary of our data frame, we can see that our model is running from the first week of 2017 through June of 2020. The dataset includes 5 columns that denote the time frame that we are specifically targeting in our study. Additionally, we have columns that call out the number of positive and negative tests that were administered during the week of study. From a positive standpoint, we are maxing out at 30k total positives with a min of 24, so we have a pretty large range that we are working with. Among positive tests, the median is at 1,601 while the mean is at 6,500, which suggests our positive tests are right skeweed. 
 
 Among our negative tests, we can see that our median and mean values per week are much closer, which shows that the negative data set is more normal than our positive tests dataset. 
+
+### Methods
+
+Considering we are going to be looking for the most accurate forecast of the upcoming data, we will need to be judicious to ensure that our historical data will be relevant to future data. Considering the recent changes to the supply chain and the strain of urbanization has left on companies’ ability to meet resource needs of consumers, we are choosing to use the most recent 3 years of data in our forecast. This will allow us to gather a sense of seasonality in our data across 4 quarters and to be able to see how that seasonality tends to change year over year in a broader linear trend. 
+
+From here, we will want to account for the weekly seasonality in our dataset and forecast based on a 52 week and a 26 week landscape. In doing so, we will be looking forward 45 weeks to completely cover the time frame from June through the start of 2021, which will account for us to include the peak season in our final forecast. 
+
 
 ### Exploratory Data Analysis
 
@@ -331,24 +341,20 @@ f1 = fore.aruma.wge(fluDf$Positive, phi = c(1.76405274, -0.88142813, -0.06765031
 #ase1
 
 ase1 = ase(fluDf$Positive, f1)
-ase1
 
 f1_neg = fore.aruma.wge(fluDf$Negative, phi = c(1.8428774, -0.8968270, -0.6407014,  1.5967127, -1.0525593,  0.1229353), theta = c(0.45129414,  0.24224825, -0.53596162,  0.75762713,  0.08476119), s=52, n.ahead = 45, lastn = TRUE)
 #ase2 = mean(((f2$f-fluDf$Negative[135:179])))
 ase2 = ase(fluDf$Negative, f1_neg)
-ase2
 
 
 f2 = fore.aruma.wge(fluDf$Positive, phi = c(1.76405274, -0.88142813, -0.06765031,  0.17643910,  0.37028688, -0.65347541,  0.23814701), s=26, n.ahead = 13, lastn = TRUE)
 #ase1 = mean(((f1$f-fluDf$Positive[154:179])))
 ase3 = ase(fluDf$Positive, f2)
-ase3
 
 
 f2_neg = fore.aruma.wge(fluDf$Negative, phi = c(1.8428774, -0.8968270, -0.6407014,  1.5967127, -1.0525593,  0.1229353), theta = c(0.45129414,  0.24224825, -0.53596162,  0.75762713,  0.08476119), s=26, n.ahead = 13, lastn = TRUE)
 #ase1 = mean(((f2$f-fluDf$Negative[154:179])))
 ase4 = ase(fluDf$Negative, f2_neg)
-ase4
 ```
 
 Now that we have our models and have addressed the seasonality phenomenon with regards to the spike that we see in our positive and negative instances dataset, we will want to begin to forecast the future diagonsises of the flu so that we can mobilize resources to best serve the need in the winter of Q4. In order to ensure that we are best forecasting future data without actuals to measure the accuracy against, we will need to look in the past to see if we can use our model to best predict the most recent 9 months of data. 
@@ -358,7 +364,7 @@ In order to do this, we will create a prediction based on 2017 through the first
 And then we will look to use a bi-weekly seasonality model to which we are looking to predict the next 13 weeks of data. Doing so for both Positive and Negative Results. 
 
 
-After running the model, we can see that our weekly seasonality forecast best performs our bi-weekly seasonality. From there, we can see that our ASE for the Positve cases is -1788.444 and negative cases is -3669.4. 
+After running the model, we can see that our weekly seasonality forecast best performs our bi-weekly seasonality. From there, we get our ASE score baseline which we can look to improve upon. 
 
 Now lets run a Burg Model to see if we can improve on our AIC scores. 
 
@@ -373,19 +379,17 @@ mean(fluDf$Positive)
 #be2
 #mean(fluDf$Positive)
 ```
-Note that the Burg model only works on AR models, so we won't be able to use it on the ARMA (6,5) negative data. Doing so, we get a model parameter series of phi = (1.76613344 -0.88202450 -0.06256226  0.16666095  0.38071794 -0.66334254  0.24216554) which is slightly different from the MLE model we ran previously. 
+Note that the Burg model only works on AR models, so we won't be able to use it on the ARMA (6,5) negative data. Doing so, we get a model parameter series of phi = (1.76613344 -0.88202450 -0.06256226  0.16666095  0.38071794 -0.66334254  0.24216554) which is slightly different from the MLE model we ran previously. A Burg estimation works to minimize the least squares through backwards prediction errors while constraining AR parameters. 
 
 Next we will check it against our ASE score. 
 
 ```{r forecast burg}
 bf1 = fore.aruma.wge(fluDf$Positive, phi = c(1.76613344, -0.88202450, -0.06256226, 0.16666095, 0.38071794, -0.66334254,  0.24216554),  s=52, n.ahead = 45, lastn = TRUE)
 ase_bf1 = ase(fluDf$Positive, bf1)
-ase_bf1
 
 
 bf2 = fore.aruma.wge(fluDf$Positive, phi = c(1.76613344, -0.88202450, -0.06256226, 0.16666095, 0.38071794, -0.66334254,  0.24216554), s=26, n.ahead = 13, lastn = TRUE)
 ase_bf2 = ase(fluDf$Positive, bf2)
-ase_bf2
 
 ```
 After running a burg estimation, we did not see an improvement in our ASE score to predict our 52 week model accuratley, but we did see a positive result in predicting the bi-weekly report accurately.
@@ -399,21 +403,22 @@ mean(fluDf$Positive)
 
 bjf1 = fore.aruma.wge(fluDf$Positive, phi = bje1$phi,  s=52, n.ahead = 45, lastn = TRUE)
 ase_bjf1 = ase(fluDf$Positive, bjf1)
-ase_bjf1
 
 
 bjf2 = fore.aruma.wge(fluDf$Positive, phi = bje1$phi, s=26, n.ahead = 13, lastn = TRUE)
 ase_bjf2 = ase(fluDf$Positive, bjf2)
-ase_bjf2
 ```
+Next, we will use the Yule-Walker estimation to forecast future flu needs. A Yule-Walker esetimate chooses parameters for which the moments are equal to the empirical moments. 
+
 ```{r yw result}
-ase_bjf1
-ase_bjf2
+#ase_bjf1
+#ase_bjf2
 ```
-Looking at the Yule Walker Approach, we can see that we did not see improvement. 
 
 
-Now lets try a neural model to see if we can improve. 
+
+
+Now lets try a neural model to see if we can improve. We will run an MLP model as well as an ELM model to see if we can improve upon the ASE scores for the MLE, Yule Walker and Burg Method. 
 
 #### Neural Forecast
 
@@ -436,7 +441,7 @@ frc <- forecast(fit.mlp,h=h)
 plot(frc)
 frc$f <- frc$mean
 ase_mlp = ase(flu_train, frc)
-ase_mlp
+#ase_mlp
 
 # Plotting Forecast vs actual for MLP
 plot(fluDf$Positive, type = "l",
@@ -448,8 +453,7 @@ lines(seq(153,178,1),frc$mean,col = "blue")
 legend(26, 3, legend=c("MLP Forecast", 'Actual'),
        col=c("green", 'black'), lty=1, cex=0.9)
 ```
-
-Our Neural Model Helped us generate an ASE score of -11844 which is not nearly as good as our MLE model.
+Next wee will perform a multilayer perceptron model which is a class of feed forward artificial neural networks. It utilizes 3 layers of nodes: an input layer, output layer and hidden layer, and each node is a neuron that uses backpropogation for training to use on future forecast data. Here, we use it for a 52 and 26 week landscape. 
 
 ```{r elm}
 set.seed(255)
@@ -459,7 +463,7 @@ plot(fit)
 frc<-forecast(fit,h=26)
 frc$f <- frc$mean
 ase_elm = ase(flu_train, frc)
-ase_elm
+#ase_elm
 
 ```
 ```{r plot}
@@ -480,14 +484,48 @@ Next, we will perform an ELM function which is a Single Hidden Layer Feedforward
 Visually, we can see that it pretty closely traces our historical data with our line much better than our MLE, MLP, Yule Walker and Burg estimation. 
 
 
+### Results
+
+For our 26 week horizons, we generating the following ASE scores for our forecasts. 
+
+* MLE - 34,336,802
+* Burg - 34,348,066
+* Yule Walker - 34,315,621
+
+Here, we can see that the Yule Walker approach has the lowest Average Square Error, which means that the distance from the predicted values is the lowest from the actual values across our timeframe estimates. 
+
+On our 52 week Horizons, we are generating the following ASE scores for our forecasts. 
+
+* MLE - 18,610,064
+* Burg - 19,395,470
+* Yule Walker - 21,523,957
+* MLP (neural) - 380,856,834
+* ELM (neural) - 302,336,726
+
+Here, we can see the most efficient 52 week model is the Maximum likelihood Estimation with an ASE at 18 MM. it makes sense as is distinct as it runs through each value of the probability distribution to come out with the 52 week forecast values that show to be the most probable. 
+
+### Conclusion
+
+After running through 5 different models in our research study, we found that the best overall forecaster (using historical data as a pressure test) was the MLE over a 52 week horizon. It was able to generate a much greater score if we are able to factor in a longer tail timeline into our forecasting mode than if we only used the previous 26 weeks. 
+
+With that said, there is practicality of using a 26 week time frame in our modeling. Considering how quickly the markets and trends change over a span of a few months, a longer tail of time may factor outdated data into our forecast. With this in mind, we found that our Yule Walker approach gave us the best score with a 26 week approach. 
+
+Both forecast models suggest there will be a peak of positive flu cases at about 30k at the end of the year, which the company will need to account for in the supply chain and production to meet. 
+
+### Deployment
+
+As COVID-19 has created a “new normal” with regards to how society practices safety to prevent the spread of illness, it’s more important than ever for drug and treatment companies to ensure they stay pliable to meet the demands. While our 52 week model gave us the greatest overall forecast, we will also need to realize that the Q4 of 2020 will be much different in the US and Globally than 2019 and the years before. So with this in mind, we would recommend looking more towards a 26 week horizon and allowing for more recent data to dictate the future. 
+
+Per our findings, we can see that we will have a soft peak at around 25k positive cases with an even bigger peak of 30k cases at the height of December going into January. Since it takes our company 6-7 months to produce and roll out treatment materials, it’s very important to begin now to ensure we are producing and supplying resources to meet that demand of 30k individuals. 
 
 
-
-Resources:
+### Resources:
 
 https://cran.r-project.org/web/packages/ELMR/ELMR.pdf
 
+http://scikit-learn.org/stable/modules/neural_networks_supervised.html 
 
+https://www.stat.berkeley.edu/~bartlett/courses/153-fall2010/lectures/12.pdf
 
-
+https://www.mathworks.com/help/dsp/ref/burgarestimator.html
 
